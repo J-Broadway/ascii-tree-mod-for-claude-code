@@ -2,6 +2,8 @@
 
 # ASCII Tree Mod for Claude Code
 
+### Ask a tree with ASCII Tree!
+
 **Turn Claude's long replies into structured trees you can scan at a glance.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-8B5A2B.svg)](LICENSE)
