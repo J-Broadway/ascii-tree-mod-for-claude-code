@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-8B5A2B.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-C8A165.svg)](https://claude.com/claude-code)
-[![Version](https://img.shields.io/badge/version-0.6.3-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.6.4-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
 
 <img src="docs/images/ascii-tree-styled.png" alt="Claude explaining /ascii-tree, drawn as a colored ASCII tree" width="760">
 
@@ -16,18 +16,17 @@
 
 ## Before and after
 
-The same question, *"How is the human nervous system organized?"*, asked in two fresh sessions.
+Each question was asked in two fresh sessions, one with `/ascii-tree` and one without.
 
-<table>
-  <tr>
-    <th width="50%">Plain reply</th>
-    <th width="50%">With <code>/ascii-tree</code></th>
-  </tr>
-  <tr>
-    <td><img src="docs/images/nervous-system-plain.png" alt="Plain Markdown reply"></td>
-    <td><img src="docs/images/nervous-system-ascii-tree.png" alt="The same reply as an ASCII tree"></td>
-  </tr>
-</table>
+**"What's inside a Kubernetes cluster?"**
+
+<img src="docs/images/kubernetes-side-by-side.png" alt="Kubernetes answer as an ASCII tree, next to the plain reply">
+
+The plain reply squeezes each group of API objects into a single comma-separated bullet. The tree gives each group its own branch, and each item has its name highlighted.
+
+**"How is the human nervous system organized?"**
+
+<img src="docs/images/nervous-system-side-by-side.png" alt="Nervous system answer as an ASCII tree, next to the plain reply">
 
 Both replies nest four levels deep. The tree is about half the length, and you can trace each node back to its parent by following the guide lines.
 
