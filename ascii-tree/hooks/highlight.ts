@@ -158,17 +158,34 @@ export const prefixRuns = (row: Row, palette: Palette): Run[] => {
 }
 
 /**
- * Where a path token links: a URL to itself, an absolute or `~/` path to its
- * `file://` URL (a terminal opens a directory's in the file manager), an
- * escaped space (`\ `) unescaped first. Relative paths have no known base and
- * are not linked; nor is a `~/` path without `home`.
+ * The absolute path a written path names: an escaped space (`\ `) unescaped,
+ * `~/` under `home`, a relative path under `cwd` with its `.` and `..`
+ * segments resolved. Undefined for a URL, or when the base it needs is unknown.
  */
-export const pathHref = (written: string, home: string | undefined): string | undefined => {
-  if (/^[a-z]+:\/\//i.test(written)) return written
+export const resolvePath = (written: string, home?: string, cwd?: string): string | undefined => {
+  if (/^[a-z]+:\/\//i.test(written)) return undefined
   const path = written.replace(/\\ /g, ' ')
-  const abs = path.startsWith('~/') ? (home === undefined ? undefined : home.replace(/\/$/, '') + path.slice(1)) : path
-  if (abs === undefined || !abs.startsWith('/')) return undefined
-  return 'file://' + encodeURI(abs)
+  if (path.startsWith('/')) return path
+  if (path.startsWith('~/')) return home === undefined ? undefined : home.replace(/\/$/, '') + path.slice(1)
+  if (cwd === undefined) return undefined
+  const segments: string[] = []
+  for (const segment of `${cwd}/${path}`.split('/')) {
+    if (segment === '..') segments.pop()
+    else if (segment !== '' && segment !== '.') segments.push(segment)
+  }
+  return '/' + segments.join('/') + (path.endsWith('/') ? '/' : '')
+}
+
+/**
+ * Where a path token links: a URL to itself, a path to the `file://` URL of
+ * what it resolves to (a terminal opens a directory's in the file manager).
+ * A relative path links only given `cwd`, which the caller passes once it
+ * knows the path exists there; a `~/` path needs `home`.
+ */
+export const pathHref = (written: string, home: string | undefined, cwd?: string): string | undefined => {
+  if (/^[a-z]+:\/\//i.test(written)) return written
+  const abs = resolvePath(written, home, cwd)
+  return abs === undefined ? undefined : 'file://' + encodeURI(abs)
 }
 
 /** A hex token as a color a terminal draws: #RGB widened, #RRGGBBAA's alpha dropped. */

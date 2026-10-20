@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { labelRuns, pathHref, prefixRuns, tokenize, type Run } from './highlight'
+import { labelRuns, pathHref, prefixRuns, resolvePath, tokenize, type Run } from './highlight'
 import { layoutTree, splitParts, type Row } from './lib'
 import { paletteFor, type Palette } from './palette'
 
@@ -58,12 +58,30 @@ export const register: Register = on => {
     const term = await env(() => $.env.get('TERM_PROGRAM'))
     const linking = term !== undefined && term !== 'vscode'
     const home = linking ? await env(() => $.env.get('HOME')) : undefined
+    // A relative path links when it exists under the session's directory:
+    // a guess at its base never becomes a broken link.
+    const cwd = linking ? await env(() => $.session.cwd()) : undefined
+    const relative = new Set<string>()
+    if (cwd !== undefined) {
+      const written = laid
+        .flatMap(part => (typeof part === 'string' ? [] : part))
+        .filter(row => row.role !== 'root')
+        .flatMap(row => tokenize(row.whole))
+        .filter(t => t.kind === 'path' && pathHref(t.text, home) === undefined)
+        .map(t => t.text)
+      await Promise.all(
+        [...new Set(written)].map(async text => {
+          const abs = resolvePath(text, home, cwd)
+          if (abs !== undefined && (await $.fs.exists(abs).catch(() => false))) relative.add(text)
+        }),
+      )
+    }
     // A run links when it is a whole path token of its node's label: a path a
     // wrap split across rows would link to a fragment of itself.
     const href = (row: Row, run: Run): string | undefined => {
       if (!linking || row.role === 'root') return undefined
       if (!tokenize(row.whole).some(t => t.kind === 'path' && t.text === run.text)) return undefined
-      return pathHref(run.text, home)
+      return pathHref(run.text, home, relative.has(run.text) ? cwd : undefined)
     }
 
     // Unreadable settings: the dark palette, as before themes.

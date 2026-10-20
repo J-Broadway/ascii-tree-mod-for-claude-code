@@ -12,6 +12,7 @@ Formatting (the `ascii-tree` mod styles and wraps the tree, so keep it plain):
 - Top-level spine uses heavy lines: `┃` for the vertical, `┣━━` for each top-level branch, `┗━━` for the last one. Leave a `┃` spacer line between top-level branches.
 - Deeper levels use light lines: `│`, `├──`, `└──`.
 - Every level indents its children by exactly 5 columns: `┃    ├──` under a `┣━━` branch, and `     ├──` (5 spaces) under the last `┗━━` branch.
+- No emoji.
 - Connectors mark topics, not lines. One node = one topic; related sentences belong in the same node. Never split a topic across sibling nodes; write it on one line and let the mod wrap it under its node. Only make separate nodes for genuinely separate topics.
 - A line break inside a node: start the next line with only the guides (no connector) and align its text under the node's text, e.g.
   ```

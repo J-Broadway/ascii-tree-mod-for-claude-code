@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { labelRuns, leafKey, pathHref, prefixRuns, tokenize } from '../hooks/highlight'
+import { labelRuns, leafKey, pathHref, prefixRuns, resolvePath, tokenize } from '../hooks/highlight'
 import { classify, continuations, isTree, layoutTree, normalizeIndent, splitParts, wrapTreeLine } from '../hooks/lib'
 import { LINEAGE, LINEAGE_LIGHT, paletteFor } from '../hooks/palette'
 
@@ -711,13 +711,23 @@ test('breaks: drawn in a mounted render', async ($, on) => {
   await ui.unmount()
 })
 
-test('links: absolute and ~/ paths and URLs link; relative paths do not', async () => {
+test('links: absolute and ~/ paths and URLs link; relative paths need a cwd', async () => {
   expect(pathHref('/Users/me/Coding/x', '/Users/me')).toBe('file:///Users/me/Coding/x')
   expect(pathHref('~/Coding/my dir/', '/Users/me/')).toBe('file:///Users/me/Coding/my%20dir/')
   expect(pathHref('~/x', undefined)).toBeUndefined()
   expect(pathHref('./x', '/Users/me')).toBeUndefined()
   expect(pathHref('hooks/lib.ts', '/Users/me')).toBeUndefined()
   expect(pathHref('https://example.com/a', undefined)).toBe('https://example.com/a')
+  expect(pathHref('hooks/lib.ts', '/Users/me', '/repo')).toBe('file:///repo/hooks/lib.ts')
+  expect(pathHref('./x', undefined, '/repo/sub')).toBe('file:///repo/sub/x')
+})
+
+test('links: relative paths resolve under the cwd, . and .. included', async () => {
+  expect(resolvePath('hooks/lib.ts', undefined, '/repo')).toBe('/repo/hooks/lib.ts')
+  expect(resolvePath('../other/a.md', undefined, '/repo/sub/')).toBe('/repo/other/a.md')
+  expect(resolvePath('./dir/', undefined, '/repo')).toBe('/repo/dir/')
+  expect(resolvePath('hooks/lib.ts', '/Users/me')).toBeUndefined()
+  expect(resolvePath('https://example.com/a', '/Users/me', '/repo')).toBeUndefined()
 })
 
 const LINK_TREE = [
@@ -835,4 +845,30 @@ test('paths with spaces: link with the space encoded', async () => {
     'file:///Users/me/Library/Application%20Support/x',
   )
   expect(pathHref('/My\\ Files/a', undefined)).toBe('file:///My%20Files/a')
+})
+
+/** Answers the session's directory and which absolute paths exist. */
+const files = (on: On, cwd: string, existing: readonly string[]) => {
+  on('session.cwd', () => ({ value: cwd }))
+  on('fs.exists', ($, e) => ({ value: existing.includes(e.path) }))
+}
+
+test('links: a relative path that exists under the cwd links', async ($, on) => {
+  mock.env(on, { TERM_PROGRAM: 'WezTerm', HOME: '/Users/me' })
+  files(on, '/Users/me/Coding/claude-mods/ascii-tree', ['/Users/me/Coding/claude-mods/ascii-tree/hooks/lib.ts'])
+  const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns: 120, rows: 40 } })
+  expect((await ui.findAll({ type: 'Link' })).map(l => l.props.href)).toContain(
+    'file:///Users/me/Coding/claude-mods/ascii-tree/hooks/lib.ts',
+  )
+  await ui.unmount()
+})
+
+test('links: a relative path missing under the cwd stays plain', async ($, on) => {
+  mock.env(on, { TERM_PROGRAM: 'WezTerm', HOME: '/Users/me' })
+  files(on, '/elsewhere', [])
+  const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns: 120, rows: 40 } })
+  const hrefs = (await ui.findAll({ type: 'Link' })).map(l => l.props.href)
+  expect(hrefs).not.toContain(expect.stringContaining('hooks/lib.ts'))
+  expect(hrefs).toHaveLength(2)
+  await ui.unmount()
 })
