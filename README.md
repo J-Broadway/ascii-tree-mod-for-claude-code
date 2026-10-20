@@ -8,7 +8,7 @@
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-C8A165.svg)](https://claude.com/claude-code)
 [![Version](https://img.shields.io/badge/version-0.6.3-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
 
-<img src="docs/images/nervous-system-ascii-tree.png" alt="A Claude reply drawn as a colored ASCII tree" width="760">
+<img src="docs/images/ascii-tree-styled.png" alt="Claude explaining /ascii-tree, drawn as a colored ASCII tree" width="760">
 
 </div>
 
