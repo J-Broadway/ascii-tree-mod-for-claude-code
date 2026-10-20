@@ -1,0 +1,14 @@
+{
+  "name": "claude-mods",
+  "owner": {
+    "name": "jbroadway"
+  },
+  "plugins": [
+    {
+      "name": "ascii-tree",
+      "source": "./ascii-tree",
+      "description": "Styles ASCII trees (heavy ┣━━/┗━━ and light ├──/└── in a ``` block) in Claude's replies on the terminal in a \"lineage\" palette: every guide in the color of the parent that owns it (brown root, then warm tan → clay → rosewood → stone by depth), green reserved for leaves and leaf tips, paths, commands, numbers, quotes and key: value leaves highlighted, children aligned, and wrapping that keeps each row under its own branch with guides unbroken. Explicit line breaks inside a node (a line of only │/┃ guides then text) draw as that node's own continuation lines, aligned at its label and styled like it."
+    }
+  ],
+  "description": "Claude Code mods: ascii-tree styles the ASCII trees in Claude's replies."
+}
