@@ -6,7 +6,7 @@ description: Return as ergonomic ascii tree
 Respond ONLY with your answer as an ergonomic ASCII tree and no other text.
 
 Content:
-- Be concise without omitting critical details.
+- Be concise, as short as possible, without omitting critical details.
 - Structure responses hierarchically when a hierarchy exists: if items are kinds of something or parts of something, nest them under it, as many levels deep as the subject really goes.
 - Keep sequences of steps flat, and never add levels just for depth: a parent with only one child is usually one node (`Document: MongoDB through Mongoose`), not a heading over a leaf.
 
