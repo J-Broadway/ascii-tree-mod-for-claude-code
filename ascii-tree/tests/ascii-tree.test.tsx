@@ -893,3 +893,19 @@ test('links: in an IDE terminal paths keep their underline, as it links them', a
   expect(row.children.find(run => run.children[0] === 'hooks/lib.ts')?.props.underline).toBe(true)
   await ui.unmount()
 })
+
+/** Three backticks, spelled out so this file's own strings stay plain. */
+const TICKS = '`'.repeat(3)
+
+test('fences: three backticks mid-line stay inside the tree', async () => {
+  const tree = ['● Title', '┃', '┣━━ inside a ' + TICKS + ' block', '┃    └── leaf', '┃', '┗━━ last'].join('\n')
+  const parts = splitParts('intro\n' + fence(tree) + '\noutro')
+  expect(parts.map(p => p.kind)).toEqual(['prose', 'tree', 'prose'])
+  expect(parts[1]?.text).toBe(tree)
+  expect(parts[2]?.text.trim()).toBe('outro')
+})
+
+test('fences: a closing fence must open its own line', async () => {
+  const parts = splitParts([TICKS, '├── a ' + TICKS + ' b', '└── c', '  ' + TICKS + '  ', 'after'].join('\n'))
+  expect(parts[0]).toEqual({ kind: 'tree', text: '├── a ' + TICKS + ' b\n└── c' })
+})

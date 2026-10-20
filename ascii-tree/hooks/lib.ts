@@ -1,6 +1,10 @@
 // Pure helpers shared by the hooks module and the tests.
 
-const FENCE = /```[^\n]*\n([\s\S]*?)```/g
+/**
+ * A ``` fenced block, as CommonMark reads one: both fences open their own
+ * line (up to 3 spaces in), so ``` in the middle of a line is text.
+ */
+const FENCE = /^ {0,3}```[^\n`]*\n([\s\S]*?)^ {0,3}```[ \t]*$/gm
 
 /** A branch glyph followed by its rule: ├── └── ├─ └─ ╰─ ┣━━ ┗━━. */
 const BRANCH = /[├└┣┗╰][─━]/
