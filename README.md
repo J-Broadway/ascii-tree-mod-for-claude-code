@@ -31,6 +31,10 @@ Both replies nest four levels deep. The tree is about half the length, and you c
 
 ## Features
 
+<div align="center">
+<img src="docs/images/ascii-tree-features.png" alt="The ascii-tree feature list, drawn by the mod" width="760">
+</div>
+
 - **Lineage coloring.** Each guide line takes the color of the parent it hangs from: tan, clay, rosewood, then stone as the tree gets deeper.
 - **Highlighting.** Paths, `/commands`, `--flags`, numbers, versions, dates, quotes and `key:` leaves each get their own style.
 - **Clickable paths.** Absolute, `~/` and existing relative paths become `file://` links. Only paths that link are underlined.
