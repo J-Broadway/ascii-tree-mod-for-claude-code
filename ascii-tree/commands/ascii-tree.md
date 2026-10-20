@@ -7,6 +7,7 @@ Respond ONLY with the user's ask restated as an ergonomic ASCII tree and no othe
 
 Formatting (the `ascii-tree` mod styles and wraps the tree, so keep it plain):
 - Put the whole tree in one ``` code block with no language tag. No markdown inside it (no `**`), except backticks: wrap code, commands and paths in them and the mod colors them and drops the backticks.
+- Write file and folder paths in full, from `~/` or `/` (`~/Coding/app/src/main.ts`, not `src/main.ts`), so they are clickable; a relative path links only when it exists under the working directory.
 - A path with spaces goes in backticks or quotes (`~/Library/Application Support/x`), so it is colored and linked whole.
 - Root: `● Title` on its own line.
 - Top-level spine uses heavy lines: `┃` for the vertical, `┣━━` for each top-level branch, `┗━━` for the last one. Leave a `┃` spacer line between top-level branches.

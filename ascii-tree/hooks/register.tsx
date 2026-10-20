@@ -112,7 +112,11 @@ export const register: Register = on => {
                   <Text wrap="truncate-end">
                     {runs(row).map(run => {
                       const to = href(row, run)
-                      const text = <Text {...run.style}>{run.text}</Text>
+                      // Underlined means clickable: a path we can't link drops
+                      // its underline. An IDE's terminal links paths itself.
+                      const { underline, ...rest } = run.style
+                      const style = linking && to === undefined ? rest : run.style
+                      const text = <Text {...style}>{run.text}</Text>
                       return to === undefined ? text : <Link href={to}>{text}</Link>
                     })}
                   </Text>

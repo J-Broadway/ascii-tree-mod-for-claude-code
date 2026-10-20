@@ -872,3 +872,24 @@ test('links: a relative path missing under the cwd stays plain', async ($, on) =
   expect(hrefs).toHaveLength(2)
   await ui.unmount()
 })
+
+test('links: a path that cannot link is drawn without its underline', async ($, on) => {
+  mock.env(on, { TERM_PROGRAM: 'WezTerm', HOME: '/Users/me' })
+  files(on, '/elsewhere', [])
+  const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns: 120, rows: 40 } })
+  const row = (await ui.find({ type: 'Text', text: 'hooks/lib.ts' })) as {
+    children: { props: { underline?: boolean }; children: unknown[] }[]
+  }
+  expect(row.children.find(run => run.children[0] === 'hooks/lib.ts')?.props).toEqual({ color: PATH })
+  await ui.unmount()
+})
+
+test('links: in an IDE terminal paths keep their underline, as it links them', async ($, on) => {
+  mock.env(on, { TERM_PROGRAM: 'vscode', HOME: '/Users/me' })
+  const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns: 120, rows: 40 } })
+  const row = (await ui.find({ type: 'Text', text: 'hooks/lib.ts' })) as {
+    children: { props: { underline?: boolean }; children: unknown[] }[]
+  }
+  expect(row.children.find(run => run.children[0] === 'hooks/lib.ts')?.props.underline).toBe(true)
+  await ui.unmount()
+})
