@@ -1,21 +1,56 @@
-# claude-mods
+<div align="center">
 
-Mods (hook plugins) for [Claude Code](https://claude.com/claude-code).
+# ASCII Tree Mod for Claude Code
+
+**Turn Claude's long replies into structured trees you can scan at a glance.**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-8B5A2B.svg)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-C8A165.svg)](https://claude.com/claude-code)
+[![Version](https://img.shields.io/badge/version-0.6.3-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
+
+<img src="docs/images/nervous-system-ascii-tree.png" alt="A Claude reply drawn as a colored ASCII tree" width="760">
+
+</div>
+
+## Before and after
+
+The same question, *"How is the human nervous system organized?"*, asked in two fresh sessions.
+
+<table>
+  <tr>
+    <th width="50%">Plain reply</th>
+    <th width="50%">With <code>/ascii-tree</code></th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/nervous-system-plain.png" alt="Plain Markdown reply"></td>
+    <td><img src="docs/images/nervous-system-ascii-tree.png" alt="The same reply as an ASCII tree"></td>
+  </tr>
+</table>
+
+Both replies nest four levels deep. The tree is about half the length, and you can trace each node back to its parent by following the guide lines.
+
+## Features
+
+- **Lineage coloring.** Each guide line takes the color of the parent it hangs from: tan, clay, rosewood, then stone as the tree gets deeper.
+- **Highlighting.** Paths, `/commands`, `--flags`, numbers, versions, dates, quotes and `key:` leaves each get their own style.
+- **Clickable paths.** Absolute, `~/` and existing relative paths become `file://` links. Only paths that link are underlined.
+- **Wrapping.** Long lines wrap under their own branch, and the guide lines continue unbroken.
+- **Light themes.** A darker palette is used on light themes. Every color in it reaches WCAG AA contrast (4.5:1).
+
+<div align="center">
+<img src="docs/images/ascii-tree-depth-and-colors.png" alt="How depth and coloring work" width="760">
+</div>
 
 ## Install
 
 ```sh
-claude plugin marketplace add <owner>/claude-mods
+claude plugin marketplace add J-Broadway/ascii-tree-mod-for-claude-code
 claude plugin install ascii-tree@claude-mods
 ```
 
-## ascii-tree
+## Usage
 
-Draws the ASCII trees in Claude's replies in a color palette, where each guide line takes the color of the parent it belongs to. Labels are highlighted: paths, commands, numbers, quotes and `key: value` leaves. Long lines wrap under their own branch, and the guide lines run on unbroken.
-
-- On a light theme (`light`, `light-daltonized`, `light-ansi`) the tree uses a darker version of the palette where every color reaches 4.5:1 contrast on white. Other themes use the original palette.
-- Absolute and `~/` paths become clickable `file://` links, so a directory opens in the file manager. In Cursor and VS Code terminals they are left as plain text, because those terminals already link paths and open them in the editor. A relative path (`hooks/lib.ts`) links too when that file exists under the session's working directory. A path that can't be linked is drawn without an underline, so only paths you can click look clickable. A path with spaces is drawn and linked as one path when it's in quotes or backticks, or when its spaces are escaped (`My\ Files`).
-- `/ascii-tree` (alias `/tree`) tells Claude to answer as a tree in the format the mod expects. The mode stays on until you tell Claude to stop.
+Run `/ascii-tree` (or `/tree`), with or without a question. Claude keeps answering as a tree until you tell it to stop.
 
 ## Develop
 
@@ -26,4 +61,4 @@ claude plugin test ascii-tree
 
 ## License
 
-MIT
+[MIT](LICENSE)
