@@ -217,6 +217,7 @@ const tokenRuns = (text: string, base: Style, palette: Palette): Run[] =>
  */
 export const labelRuns = (row: Row, palette: Palette): Run[] => {
   if (row.label === '') return []
+  if (row.role === 'rule') return [{ text: row.label, style: { dimColor: true } }]
   if (row.role === 'root') return [{ text: row.label, style: palette.seed }]
   if (row.hasChildren) {
     return merge(tokenRuns(row.label, depthStyle(palette, Math.max(row.depth, 1)), palette))

@@ -12,15 +12,23 @@ const BRANCH = /[├└┣┗╰][─━]/
 const BRANCH_LINE = /^[\s│┃]*[├└┣┗╰][─━]+\s*[^\s─━│┃├└┣┗╰]/
 /** Box and table corners and joints: a block holding any is not a tree. */
 const BOX = /[┌┐┘┤┴┼╋┳┻┫┏┓┛═║╔╗╚╝]/
+/** A horizontal rule: a section divider (═══ ━━━ ───), maybe under guides. */
+const RULE = /^[\s│┃]*[═━─]{3,}\s*$/
+
+/** True for a line that is only a horizontal rule. */
+export const isRule = (line: string): boolean => RULE.test(line)
 
 /**
  * True when a block of text reads as an ASCII tree: at least one branch line
  * (light ├── / └── or heavy ┣━━ / ┗━━ with a label after it) and no box or
- * table drawing.
+ * table drawing. Rule lines are dividers, not boxes: a ═══ line between
+ * sections is left out of the box test (a real box keeps its corners and
+ * sides, which still match).
  */
 export const isTree = (block: string): boolean => {
-  if (BOX.test(block)) return false
-  return block.split('\n').some(line => BRANCH_LINE.test(line))
+  const lines = block.split('\n').filter(line => !isRule(line))
+  if (BOX.test(lines.join('\n'))) return false
+  return lines.some(line => BRANCH_LINE.test(line))
 }
 
 /**
@@ -118,8 +126,9 @@ export const maxWidth = (lines: readonly string[]): number =>
  * - `leaf`: a branch without children, or a note under the root
  * A node's continuation lines (hard line breaks) take the node's role.
  * - `guide`: a line of guides alone (`┃`, `│`, blank)
+ * - `rule`: a horizontal rule (═══ ━━━ ───), a section divider
  */
-export type Role = 'root' | 'top' | 'branch' | 'leaf' | 'guide'
+export type Role = 'root' | 'top' | 'branch' | 'leaf' | 'guide' | 'rule'
 
 /** Where each line's own branch glyph sits, or -1 for a line without one. */
 const branchCols = (lines: readonly string[]): number[] =>
@@ -148,6 +157,11 @@ export const continuations = (lines: readonly string[]): (number | undefined)[] 
       node = i
       return undefined
     }
+    if (isRule(line)) {
+      // A divider ends the node above, as a root-like line does.
+      node = undefined
+      return undefined
+    }
     const guide = line.match(GUIDE)?.[0] ?? ''
     const label = line.slice(guide.length)
     if (label.trim() === '') return undefined
@@ -172,6 +186,7 @@ export const classify = (lines: readonly string[]): Role[] | undefined => {
   const top = Math.min(...found)
   const owner = continuations(lines)
   const roles = lines.map((line, i): Role => {
+    if (isRule(line)) return 'rule'
     const guide = line.match(GUIDE)?.[0] ?? ''
     const label = line.slice(guide.length)
     if (label.trim() === '') return 'guide'
@@ -348,6 +363,11 @@ export const layoutTree = (block: string, cols: number): Row[] | undefined => {
     const base = { role, depth, owners, hasChildren }
     const trimmed = line.replace(/\s+$/, '')
     const whole = trimmed.slice((trimmed.match(GUIDE)?.[0] ?? '').length)
+    if (role === 'rule') {
+      // Never wrapped: a divider too wide for the screen is cut at its edge.
+      const prefix = trimmed.match(/^[\s│┃]*/)?.[0] ?? ''
+      return [{ ...base, prefix, label: trimmed.slice(prefix.length), connector: -1, first: true, whole }]
+    }
     if (role === 'guide') return [{ ...base, prefix: trimmed, label: '', connector: -1, first: true, whole }]
     if (role === 'root') {
       return wrapTreeLine(trimmed, cols).map((label, n) => ({

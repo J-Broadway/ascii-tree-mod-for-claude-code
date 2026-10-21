@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import { labelRuns, leafKey, pathHref, prefixRuns, resolvePath, tokenize } from '../hooks/highlight'
-import { classify, continuations, isTree, layoutTree, normalizeIndent, splitParts, wrapTreeLine } from '../hooks/lib'
+import { classify, continuations, isRule, isTree, layoutTree, normalizeIndent, splitParts, wrapTreeLine } from '../hooks/lib'
 import { LINEAGE, LINEAGE_LIGHT, paletteFor } from '../hooks/palette'
 
 const SEED = '#8B5A2B'
@@ -908,4 +908,53 @@ test('fences: three backticks mid-line stay inside the tree', async () => {
 test('fences: a closing fence must open its own line', async () => {
   const parts = splitParts([TICKS, '├── a ' + TICKS + ' b', '└── c', '  ' + TICKS + '  ', 'after'].join('\n'))
   expect(parts[0]).toEqual({ kind: 'tree', text: '├── a ' + TICKS + ' b\n└── c' })
+})
+
+/** Two roots split by a divider line of `ch`. */
+const ruled = (ch: string) =>
+  ['✓ Check 7/8', '├── Question', '│   ├── A: x', '│   └── B: y', ch.repeat(10), 'Check 8/8', '├── Why', '└── Your answer'].join('\n')
+
+test('rules: a ═ / ━ / ─ divider between two roots keeps the block a tree', async () => {
+  for (const ch of ['═', '━', '─']) {
+    expect(isTree(ruled(ch))).toBe(true)
+    expect(splitParts(fence(ruled(ch))).map(p => p.kind)).toEqual(['tree'])
+    expect(classify(ruled(ch).split('\n'))).toEqual(['root', 'top', 'leaf', 'leaf', 'rule', 'root', 'top', 'top'])
+  }
+  expect(isRule('│   ══════')).toBe(true)
+  expect(isRule('══ x ══')).toBe(false)
+  expect(isRule('──')).toBe(false)
+})
+
+test('rules: a ╔═╗ box and a ┌─┐ table are still not trees', async () => {
+  expect(isTree('╔═══════╗\n║ ├── a ║\n╚═══════╝')).toBe(false)
+  expect(isTree('┌───────┐\n│ ├── a │\n└───────┘')).toBe(false)
+  expect(isTree('══════\n├── a\n╔══╗')).toBe(false)
+})
+
+test('rules: a divider row is drawn muted and unwrapped, the same for every character', async () => {
+  for (const ch of ['═', '━', '─']) {
+    const rows = rowsOf(ruled(ch), 8)
+    const rule = rows.filter(r => r.role === 'rule')
+    expect(rule).toHaveLength(1)
+    expect(rule[0]).toMatchObject({ prefix: '', label: ch.repeat(10), depth: -1, hasChildren: false })
+    expect(labelRuns(rule[0]!, LINEAGE)).toEqual([{ text: ch.repeat(10), style: { dimColor: true } }])
+    // Both roots are laid out as roots.
+    expect(rows.filter(r => r.role === 'root' && r.first).map(r => r.whole)).toEqual(['✓ Check 7/8', 'Check 8/8'])
+  }
+})
+
+test('rules: a divider ends the node above it', async () => {
+  expect(continuations(['r', '├── A', '═════', '│   x'])).toEqual([, , , ,])
+  const rows = rowsOf('r\n├── A\n│   ═════\n└── B')
+  expect(rows[2]).toMatchObject({ prefix: '│   ', label: '═════', role: 'rule' })
+})
+
+test('rules: a fence with a ═ divider is drawn by the plugin, not the engine', async ($, on) => {
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  const ui = await $.ui.mount({ ...message(fence(ruled('═'))), viewport: { columns: 120, rows: 40 } })
+  expect(await ui.find({ type: 'Text', text: /engine/ })).toBeUndefined()
+  await ui.unmount()
 })
