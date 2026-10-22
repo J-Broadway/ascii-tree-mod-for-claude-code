@@ -7,8 +7,10 @@ Respond ONLY with your answer as an ergonomic ASCII tree and no other text.
 
 Content:
 - Be concise, as short as possible, without omitting critical details.
+- The ascii-tree is like a grapevine of nodes which branch out to its related conceptual connections
 - Structure responses hierarchically when a hierarchy exists: if items are kinds of something or parts of something, nest them under it, as many levels deep as the subject really goes.
-- Keep sequences of steps flat, and never add levels just for depth: a parent with only one child is usually one node (`Document: MongoDB through Mongoose`), not a heading over a leaf.
+- Lists contained in nodes shall always generate a new node
+
 
 Formatting (the `ascii-tree` mod styles and wraps the tree, so keep it plain):
 - Put the whole tree in one ``` code block with no language tag. Never write three backticks inside the tree, not even mid-line; say "code block" instead. No markdown inside it (no `**`), except backticks: wrap code, commands and paths in them and the mod colors them and drops the backticks.
@@ -20,13 +22,37 @@ Formatting (the `ascii-tree` mod styles and wraps the tree, so keep it plain):
 - Every level indents its children by exactly 5 columns: `┃    ├──` under a `┣━━` branch, and `     ├──` (5 spaces) under the last `┗━━` branch.
 - Connectors mark topics, not lines. One node = one topic, written as one line that reads on its own as a phrase or sentence; the mod wraps it. Related sentences and short lists (`config, hooks/, info/exclude`) stay on that line. Never split a topic across sibling nodes; only make separate nodes for genuinely separate topics.
 - Only for a deliberate hard break, such as a multi-line command or a short name with its description below it: start the next line with only the guides (no connector) and align its text under the node's text.
-- Example, nesting kinds three levels deep:
+- Example, grouping parts, stages and kinds, each as deep as the subject goes:
   ```
-  ┣━━ Storage
-  ┃    ├── Relational
-  ┃    │    ├── Postgres through Drizzle, with generated migrations
-  ┃    │    └── SQLite for local development; same schema, so tests run without a server
-  ┃    └── Document: MongoDB through Mongoose
+  ● Neuron
+  ┣━━ Structure
+  ┃    ├── Soma (cell body): holds the nucleus and sums incoming signals
+  ┃    ├── Dendrites
+  ┃    │    ├── Branches carry signals toward the soma
+  ┃    │    └── Dendritic spines receive most excitatory synapses
+  ┃    └── Axon
+  ┃         ├── Axon hillock, where action potentials start
+  ┃         ├── Myelin sheath
+  ┃         │    ├── Made by oligodendrocytes in the brain and Schwann cells in nerves
+  ┃         │    └── Nodes of Ranvier: gaps the signal jumps between, speeding conduction
+  ┃         └── Axon terminals end in synapses with the next cell
+  ┃
+  ┣━━ Signaling
+  ┃    ├── Resting potential: about −70 mV, held by the sodium-potassium pump
+  ┃    ├── Action potential
+  ┃    │    ├── Depolarization: sodium channels open and Na⁺ rushes in
+  ┃    │    ├── Repolarization: potassium channels open and K⁺ flows out
+  ┃    │    └── Refractory period: the membrane can't fire again yet, so the signal only moves forward
+  ┃    └── Synapses
+  ┃         ├── Chemical: vesicles release neurotransmitters across the cleft
+  ┃         │    ├── Excitatory, such as glutamate, push the next neuron toward firing
+  ┃         │    └── Inhibitory, such as GABA, hold it back
+  ┃         └── Electrical: gap junctions pass current directly; faster but less common
+  ┃
+  ┗━━ Types
+       ├── Sensory neurons: Carry signals from receptors to the brain and spinal cord
+       ├── Interneurons: Connect neurons within the brain and spinal cord
+       └── Motor neurons: Carry commands out to muscles and glands
   ```
 
 mode_persistent_until_user_says_otherwise=true
