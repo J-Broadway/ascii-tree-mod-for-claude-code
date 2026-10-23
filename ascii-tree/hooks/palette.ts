@@ -93,6 +93,12 @@ export type Palette = {
    * off the terminal's, so it stands out while the text keeps its own color.
    */
   attention: Style
+  /**
+   * A code block, inside a tree or after it: a background a step off the
+   * terminal's, neutral grey, so code reads as a block while its text keeps
+   * the default color. It fills the code text, never the guides beside it.
+   */
+  codeBlock: Style
 }
 
 /**
@@ -122,6 +128,8 @@ export const LINEAGE: Palette = {
   arrow: { dimColor: true },
   // A muted amber a little lighter than a dark background: white text reads on it.
   attention: { backgroundColor: '#3B3223' },
+  // Neutral grey a step lighter than a dark background (~#1E1E1E): default text reads on it.
+  codeBlock: { backgroundColor: '#2D2D2D' },
 }
 
 /**
@@ -146,6 +154,8 @@ export const LINEAGE_LIGHT: Palette = {
   arrow: { dimColor: true },
   // A pale amber a little darker than white: black text reads on it.
   attention: { backgroundColor: '#F6EBC9' },
+  // Neutral grey a step darker than white: black text reads on it.
+  codeBlock: { backgroundColor: '#EBEBEB' },
 }
 
 /**

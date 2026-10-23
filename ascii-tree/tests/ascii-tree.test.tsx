@@ -4,7 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { DEFAULT_RULES, labelRuns, leadEnd, leafKey, pathHref, prefixRuns, resolvePath, tokenize } from '../hooks/highlight'
 import { applyPalette, EMPTY_CONFIG, markerGuide, parseConfig, resolveLook, userPath, withPreferences } from '../hooks/config'
 import { compileRules } from '../hooks/rules'
-import { classify, continuations, isRule, isTree, layoutTree, normalizeIndent, splitParts, wrapTreeLine } from '../hooks/lib'
+import { classify, continuations, isRule, isTree, layoutTree, normalizeIndent, splitCode, splitParts, wrapTreeLine } from '../hooks/lib'
 import { LINEAGE, LINEAGE_LIGHT, paletteFor } from '../hooks/palette'
 
 const SEED = '#8B5A2B'
@@ -1357,4 +1357,133 @@ test('markers: a rule\'s `when` puts it in the prompt; disabling a rule takes it
 test('markers: a broken config.json still lists the built-in markers', async ($, on) => {
   userFiles(on, { [CONFIG]: '{ not json' })
   expect((await $.skill.prompt({ skill: 'tree', text: 'BASE PROMPT' })).text).toBe(BASE)
+})
+
+const SPLIT = [
+  fence('● Deploy\n┣━━ Build\n┃    └── Run the build, then check the output folder:'),
+  '```sh\nnpm ci\nnpm run build\n```',
+  fence('┃\n┗━━ Ship\n     └── Upload the build'),
+].join('\n')
+
+const CODE_BG = LINEAGE.codeBlock.backgroundColor
+
+test('code in trees: tree, code, tree stitches into one part, and repeats', async () => {
+  const parts = splitParts(`Intro\n\n${SPLIT}\n\nOutro`)
+  expect(parts.map(p => p.kind)).toEqual(['prose', 'tree', 'prose'])
+  expect(parts[1]?.text).toBe(
+    '● Deploy\n┣━━ Build\n┃    └── Run the build, then check the output folder:\n┃\n┗━━ Ship\n     └── Upload the build',
+  )
+  expect(parts[1]?.code).toEqual([{ after: 2, lines: ['npm ci', 'npm run build'] }])
+  // The joined text is a tree that classifies as if the code weren't there.
+  expect(isTree(parts[1]!.text)).toBe(true)
+  expect(classify(parts[1]!.text.split('\n'))).toEqual(['root', 'top', 'leaf', 'guide', 'top', 'leaf'])
+
+  const twice = [
+    fence('● A\n┣━━ B\n┃    └── b'),
+    '```sh\none\n```',
+    '```sh\ntwo\n```',
+    fence('┃\n┣━━ C\n┃    └── c'),
+    '```\nthree\n```',
+    fence('┃\n┗━━ D'),
+  ].join('\n\n')
+  const repeated = splitParts(twice)
+  expect(repeated).toHaveLength(1)
+  expect(repeated[0]?.code).toEqual([
+    { after: 2, lines: ['one'] },
+    { after: 2, lines: ['two'] },
+    { after: 5, lines: ['three'] },
+  ])
+  expect(repeated[0]?.text.split('\n')).toHaveLength(8)
+})
+
+test('code in trees: prose between the fences, a new root, or no continuation keeps them apart', async () => {
+  const code = '```sh\nnpm ci\n```'
+  const tail = fence('┃\n┗━━ Ship')
+  const head = fence('● Deploy\n┣━━ Build')
+  expect(splitParts(`${head}\n\n${code}\n\nthen:\n\n${tail}`).map(p => p.kind)).toEqual(['tree', 'prose', 'tree'])
+  expect(splitParts(`${head}\n\nthen:\n\n${code}\n\n${tail}`).map(p => p.kind)).toEqual(['tree', 'prose', 'tree'])
+  expect(splitParts(`${head}\n${code}`).map(p => p.kind)).toEqual(['tree', 'prose'])
+  expect(splitParts(`${head}\n${code}\n${fence('● Other\n┗━━ x')}`).map(p => p.kind)).toEqual(['tree', 'prose', 'tree'])
+  expect(splitParts(`${head}\n${code}\n${tail}`).map(p => p.kind)).toEqual(['tree'])
+})
+
+const CODE_TREE = ['● T', '┣━━ Build', '┃    ├── Step one', '┃    └── Step two', '┃', '┗━━ Ship', '     └── Upload'].join('\n')
+const rowTexts = (rows: ReturnType<typeof rowsOf>) => rows.map(r => r.prefix + r.label)
+
+test('code in trees: code rows sit at the label column under unbroken guides', async () => {
+  // Under a non-last light branch: its own stem runs on as │.
+  let rows = layoutTree(CODE_TREE, 80, [{ after: 2, lines: ['npm ci', '  nested'] }]) ?? []
+  expect(rowTexts(rows)).toEqual([
+    '● T',
+    '┣━━ Build',
+    '┃    ├── Step one',
+    '┃    │   npm ci',
+    '┃    │     nested',
+    '┃    └── Step two',
+    '┃',
+    '┗━━ Ship',
+    '     └── Upload',
+  ])
+  expect(rows.map(r => r.role).slice(3, 5)).toEqual(['code', 'code'])
+  // Under a last └──: spaces, with the heavy spine still running.
+  rows = layoutTree(CODE_TREE, 80, [{ after: 3, lines: ['x'] }]) ?? []
+  expect(rowTexts(rows)[4]).toBe('┃        x')
+  rows = layoutTree(CODE_TREE, 80, [{ after: 6, lines: ['x'] }]) ?? []
+  expect(rowTexts(rows)[7]).toBe('         x')
+  // Under a ┣━━ whose next line is a child: the code is at the label column, stem kept.
+  rows = layoutTree(CODE_TREE, 80, [{ after: 1, lines: ['make'] }]) ?? []
+  expect(rowTexts(rows).slice(1, 4)).toEqual(['┣━━ Build', '┃   make', '┃    ├── Step one'])
+  // The guides are colored by the node's lineage; the code run is the only one with a background.
+  expect(glyphColors(prefixRuns(rows[2]!, LINEAGE))).toEqual([['┃', SEED]])
+  expect(labelRuns(rows[2]!, LINEAGE)).toEqual([{ text: 'make', style: { backgroundColor: CODE_BG } }])
+  // The tree itself lays out exactly as without the code.
+  const without = layoutTree(CODE_TREE, 80) ?? []
+  expect(layoutTree(CODE_TREE, 80, [{ after: 2, lines: ['a'] }])?.filter(r => r.role !== 'code')).toEqual(without)
+})
+
+test('code in trees: code is never tokenized, key-split or highlighted', async () => {
+  const rows = layoutTree(CODE_TREE, 80, [{ after: 3, lines: ['note: ~/a/b.ts 42 --flag "q" ⚠ x'] }]) ?? []
+  const row = rows[4]!
+  expect(row.role).toBe('code')
+  expect(labelRuns(row, LINEAGE)).toEqual([{ text: 'note: ~/a/b.ts 42 --flag "q" ⚠ x', style: { backgroundColor: CODE_BG } }])
+  expect(labelRuns(row, LINEAGE_LIGHT)[0]?.style).toEqual({ backgroundColor: LINEAGE_LIGHT.codeBlock.backgroundColor })
+})
+
+test('code in trees: a wide code line wraps under its prefix, indentation kept, blank lines keep their row', async () => {
+  const rows = layoutTree(CODE_TREE, 24, [{ after: 3, lines: ['  abcdefghijklmnopqrstuvwxyz0123456789', '', 'z'] }]) ?? []
+  // Prefix is 9 wide, so 15 columns of room; the wrapped rows hang at the 2-space indent.
+  expect(rowTexts(rows).slice(4, 9)).toEqual([
+    '┃          abcdefghijklm',
+    '┃          nopqrstuvwxyz',
+    '┃          01234567' + '89',
+    '┃        ',
+    '┃        z',
+  ])
+  expect(rows.slice(4, 7).every(r => r.role === 'code')).toBe(true)
+})
+
+test('code in trees: a mounted render draws the stitched tree with code in codeBlock', async ($, on) => {
+  const ui = await $.ui.mount({ ...message(`Here:\n\n${SPLIT}\n`), viewport: { columns: 120, rows: 40 } })
+  const texts = await ui.findAll({ type: 'Text' })
+  const leaf = (text: string) => texts.find(t => t.text === text && t.children.every(c => typeof c === 'string'))
+  expect(leaf('npm ci')?.props).toMatchObject({ backgroundColor: CODE_BG })
+  expect(leaf('npm run build')?.props).toMatchObject({ backgroundColor: CODE_BG })
+  expect(leaf('● Deploy')?.props).toMatchObject({ color: SEED })
+  expect(leaf('Ship')?.props).toMatchObject({ color: TAN })
+  // One tree, not three: the code is a row of it, and no fence marks remain.
+  expect(texts.some(t => t.text.includes('```'))).toBe(false)
+  expect(texts.filter(t => t.text === '┃        ').length).toBeGreaterThan(0)
+  await ui.unmount()
+})
+
+test('code after the tree: a code fence is drawn as a codeBlock Code, bare source', async ($, on) => {
+  const ui = await $.ui.mount({
+    ...message(`${fence(HEAVY_TREE)}\n\n\`\`\`sh\nnpm ci\nnpm test\n\`\`\`\n`),
+    viewport: { columns: 120, rows: 40 },
+  })
+  const code = await ui.find({ type: 'Code' })
+  expect(code?.props).toMatchObject({ source: 'npm ci\nnpm test', language: 'sh' })
+  expect(code?.props.startLine).toBeUndefined()
+  await ui.unmount()
+  expect(splitCode('a\n\n```ts\nlet x\n```\nb').map(p => p.kind)).toEqual(['prose', 'code', 'prose'])
 })

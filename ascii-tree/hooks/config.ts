@@ -15,7 +15,7 @@ import { compileRules, markerOf, type Mode, type Rule } from './rules'
 type Log = (msg: string) => void
 
 /** The palette roles that are one style each (`depth` is a list, handled apart). */
-export const STYLE_ROLES = ['seed', 'leafKey', 'code', 'path', 'number', 'quote', 'arrow', 'attention'] as const
+export const STYLE_ROLES = ['seed', 'leafKey', 'code', 'path', 'number', 'quote', 'arrow', 'attention', 'codeBlock'] as const
 type StyleRole = (typeof STYLE_ROLES)[number]
 
 /** A theme's overrides: per role, the keys to change. `depth[i]` patches depth level i+1. */

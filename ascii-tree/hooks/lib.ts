@@ -4,7 +4,7 @@
  * A ``` fenced block, as CommonMark reads one: both fences open their own
  * line (up to 3 spaces in), so ``` in the middle of a line is text.
  */
-const FENCE = /^ {0,3}```[^\n`]*\n([\s\S]*?)^ {0,3}```[ \t]*$/gm
+const FENCE = /^ {0,3}```([^\n`]*)\n([\s\S]*?)^ {0,3}```[ \t]*$/gm
 
 /** A branch glyph followed by its rule: ├── └── ├─ └─ ╰─ ┣━━ ┗━━. */
 const BRANCH = /[├└┣┗╰][─━]/
@@ -32,25 +32,116 @@ export const isTree = (block: string): boolean => {
 }
 
 /**
- * Splits markdown into prose and tree-fence parts, in order, so a drawing can
- * keep the prose as markdown and lay the trees out itself.
+ * Code a tree was interrupted by: `lines` are drawn under the tree line at
+ * index `after` (the node the code belongs to), in the order they were written.
  */
-export type Part = { kind: 'prose' | 'tree'; text: string }
+export type CodeInsert = { after: number; lines: string[] }
+
+/**
+ * Splits markdown into prose and tree-fence parts, in order, so a drawing can
+ * keep the prose as markdown and lay the trees out itself. A tree that a code
+ * block interrupts (see `stitch`) is one `tree` part: `text` is the tree as if
+ * the code weren't there, `code` the interruptions, so it lays out exactly as
+ * the uninterrupted tree would.
+ */
+export type Part = { kind: 'prose' | 'tree'; text: string; code?: CodeInsert[] }
+
+type Fence = { at: number; end: number; info: string; body: string }
+
+/** The ``` fences of a message, each with where it sits and its body without the last newline. */
+const fencesOf = (text: string): Fence[] =>
+  [...text.matchAll(FENCE)].map(match => {
+    const at = match.index ?? 0
+    return { at, end: at + match[0].length, info: match[1] ?? '', body: (match[2] ?? '').replace(/\n$/, '') }
+  })
+
+/** A continuation fence picks a tree up after a code block: no root line, it opens on a guide or branch glyph. */
+const CONTINUES = /^\s*[│┃├└┣┗╰]/
+const continues = (body: string): boolean =>
+  CONTINUES.test(body.split('\n').find(line => line.trim() !== '') ?? '')
+
+/** A fence's lines with the blank ones at either end dropped. */
+const trimmed = (body: string): string[] => {
+  const lines = body.split('\n')
+  while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') lines.pop()
+  while (lines.length > 0 && (lines[0] ?? '').trim() === '') lines.shift()
+  return lines
+}
+
+/**
+ * The tree that starts at fence `from` with the code blocks that interrupt it:
+ * a tree fence, then one or more non-tree fences, then a continuation fence,
+ * repeated as often as it goes. Only whitespace may sit between the fences, so
+ * prose in between ends the tree (and a code block with no continuation after
+ * it is not part of it). `next` is the index of the first fence left over.
+ */
+const stitch = (text: string, fences: readonly Fence[], from: number): { part: Part; end: number; next: number } => {
+  const first = fences[from] as Fence
+  const lines = trimmed(first.body)
+  const code: CodeInsert[] = []
+  let end = first.end
+  let next = from + 1
+  for (;;) {
+    // The code fences right after the tree so far, whitespace apart.
+    let j = next
+    let prevEnd = end
+    const run: Fence[] = []
+    for (let f = fences[j]; f !== undefined && !isTree(f.body) && text.slice(prevEnd, f.at).trim() === ''; f = fences[++j]) {
+      run.push(f)
+      prevEnd = f.end
+    }
+    const tail = fences[j]
+    if (run.length === 0 || tail === undefined || !isTree(tail.body) || !continues(tail.body)) break
+    if (text.slice(prevEnd, tail.at).trim() !== '') break
+    // The node is the last line of the tree so far; the continuation joins on below it.
+    for (const f of run) code.push({ after: lines.length - 1, lines: f.body.split('\n') })
+    lines.push(...trimmed(tail.body))
+    end = tail.end
+    next = j + 1
+  }
+  const part: Part = { kind: 'tree', text: lines.join('\n') }
+  return { part: code.length > 0 ? { ...part, code } : part, end, next }
+}
+
 export const splitParts = (text: string): Part[] => {
   const parts: Part[] = []
+  const fences = fencesOf(text)
   let last = 0
-  for (const match of text.matchAll(FENCE)) {
-    const body = (match[1] ?? '').replace(/\n$/, '')
-    if (!isTree(body)) continue
-    const at = match.index ?? 0
-    const before = text.slice(last, at)
+  for (let i = 0; i < fences.length; ) {
+    const fence = fences[i] as Fence
+    if (!isTree(fence.body)) {
+      i++
+      continue
+    }
+    const before = text.slice(last, fence.at)
     if (before.trim() !== '') parts.push({ kind: 'prose', text: before })
-    parts.push({ kind: 'tree', text: body })
-    last = at + match[0].length
+    const { part, end, next } = stitch(text, fences, i)
+    parts.push(part)
+    last = end
+    i = next
   }
   const rest = text.slice(last)
   if (rest.trim() !== '') parts.push({ kind: 'prose', text: rest })
   return parts
+}
+
+/**
+ * Prose split around its code fences, so a block of code can be drawn as one:
+ * `text` is the code without its fences, `lang` the fence's language tag.
+ */
+export type Piece = { kind: 'prose'; text: string } | { kind: 'code'; text: string; lang: string | undefined }
+export const splitCode = (prose: string): Piece[] => {
+  const pieces: Piece[] = []
+  let last = 0
+  for (const f of fencesOf(prose)) {
+    const before = prose.slice(last, f.at)
+    if (before.trim() !== '') pieces.push({ kind: 'prose', text: before })
+    pieces.push({ kind: 'code', text: f.body, lang: f.info.trim().split(/\s+/)[0] || undefined })
+    last = f.end
+  }
+  const rest = prose.slice(last)
+  if (rest.trim() !== '') pieces.push({ kind: 'prose', text: rest })
+  return pieces
 }
 
 /** Columns a line takes, counting each code point as one cell. */
@@ -127,8 +218,10 @@ export const maxWidth = (lines: readonly string[]): number =>
  * A node's continuation lines (hard line breaks) take the node's role.
  * - `guide`: a line of guides alone (`┃`, `│`, blank)
  * - `rule`: a horizontal rule (═══ ━━━ ───), a section divider
+ * - `code`: a row of a code block drawn inside the tree (`layoutTree` makes
+ *   these; `classify` never returns one)
  */
-export type Role = 'root' | 'top' | 'branch' | 'leaf' | 'guide' | 'rule'
+export type Role = 'root' | 'top' | 'branch' | 'leaf' | 'guide' | 'rule' | 'code'
 
 /** Where each line's own branch glyph sits, or -1 for a line without one. */
 const branchCols = (lines: readonly string[]): number[] =>
@@ -336,18 +429,80 @@ const offsets = (labels: readonly string[], whole: string): (number | undefined)
   })
 }
 
+/** Tabs count as this many columns in code, so a row's width is what it is drawn at. */
+const TAB = '    '
+
+/**
+ * The rows of a code block that hangs under the node at `lines[node]`: the
+ * node's stem for a prefix (so every vertical running past the code runs on
+ * unbroken, the node's own included when later siblings follow) and the code
+ * at the node's label column, like a hard-break continuation line. No
+ * vertical goes at the child column: the code text sits there, and nothing
+ * draws a child column before the first child's own connector. A line wider
+ * than the room is cut into rows of it under the same prefix, indentation
+ * kept on every row; a blank line keeps its row. Never tokenized: `offset` is undefined
+ * and the row's `role` is `code`.
+ */
+const codeRows = (code: readonly string[], nodeLine: string | undefined, nodeLineage: Lineage | undefined, cols: number): Row[] => {
+  const prefix = stemOf(nodeLine?.match(GUIDE)?.[0] ?? '')
+  const room = Math.max(cols - width(prefix), 4)
+  return code.flatMap(raw => {
+    const text = raw.replace(/\t/g, TAB).replace(/\s+$/, '')
+    // A wrapped line hangs at its own indentation, so the rows read as one statement.
+    const indent = Math.min(text.length - text.trimStart().length, Math.max(room - 4, 0))
+    const step = room - indent
+    const pieces =
+      text === ''
+        ? ['']
+        : [sliceCols(text, 0, room), ...Array.from({ length: Math.max(Math.ceil((width(text) - room) / step), 0) }, (_, n) => ' '.repeat(indent) + sliceCols(text, room + n * step, step))]
+    return pieces.map((label, n): Row => ({
+      role: 'code',
+      depth: nodeLineage?.depth ?? -1,
+      owners: nodeLineage?.owners ?? [],
+      hasChildren: false,
+      prefix,
+      label,
+      connector: -1,
+      first: n === 0,
+      whole: text,
+      offset: undefined,
+      continuation: true,
+    }))
+  })
+}
+
 /**
  * Lays a tree block out in rows no wider than `cols`, each split into the
  * guide drawing and the label so the two can be styled apart. Undefined when
- * the block does not parse as a tree.
+ * the block does not parse as a tree. `code` blocks hang under the tree line
+ * they follow (see `codeRows`), laid out with the rest so the verticals stay
+ * unbroken; the tree itself is laid out as if they weren't there.
  */
-export const layoutTree = (block: string, cols: number): Row[] | undefined => {
+export const layoutTree = (block: string, cols: number, code: readonly CodeInsert[] = []): Row[] | undefined => {
   const lines = normalizeIndent(block.split('\n'))
   const roles = classify(lines)
   if (roles === undefined) return undefined
-  const lineages = lineage(lines, roles)
+  const known: readonly Role[] = roles
+  const lineages = lineage(lines, known)
   const owner = continuations(lines)
-  return lines.flatMap((line, i): Row[] => {
+  const branchAt = branchCols(lines)
+  // The node a code block belongs to: the tree line it follows, its owner for
+  // a continuation line, else the nearest branch line above.
+  const nodeOf = (at: number): number | undefined => {
+    if ((branchAt[at] ?? -1) >= 0) return at
+    const owned = owner[at]
+    if (owned !== undefined) return owned
+    for (let k = at - 1; k >= 0; k--) if ((branchAt[k] ?? -1) >= 0) return k
+    return undefined
+  }
+  const withCode = (rows: Row[], i: number): Row[] =>
+    code.filter(c => c.after === i).reduce((out, c) => {
+      const at = nodeOf(i)
+      return [...out, ...codeRows(c.lines, at === undefined ? undefined : lines[at], at === undefined ? undefined : lineages[at], cols)]
+    }, rows)
+  return lines.flatMap((line, i): Row[] => withCode(rowsOf(line, i), i))
+
+  function rowsOf(line: string, i: number): Row[] {
     const node = owner[i]
     const nodeLine = node === undefined ? undefined : lines[node]
     if (node !== undefined && nodeLine !== undefined) {
@@ -364,7 +519,7 @@ export const layoutTree = (block: string, cols: number): Row[] | undefined => {
       const at = offsets(wrapped.map(r => r.label), text)
       return wrapped.map(({ prefix, label }, n) => {
         return {
-          role: roles[node] ?? 'leaf',
+          role: known[node] ?? 'leaf',
           depth: nodeLineage?.depth ?? -1,
           owners: nodeLineage?.owners ?? [],
           hasChildren: nodeLineage?.hasChildren ?? false,
@@ -378,7 +533,7 @@ export const layoutTree = (block: string, cols: number): Row[] | undefined => {
         }
       })
     }
-    const role = roles[i] ?? 'leaf'
+    const role = known[i] ?? 'leaf'
     const { col, depth, owners, hasChildren } = lineages[i] ?? {
       col: -1,
       depth: -1,
@@ -421,5 +576,5 @@ export const layoutTree = (block: string, cols: number): Row[] | undefined => {
       whole,
       offset: at[n],
     }))
-  })
+  }
 }

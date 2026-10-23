@@ -41,6 +41,7 @@ Roles, each one style:
 | `quote` | "quoted text" |
 | `arrow` | arrows such as the right-arrow |
 | `attention` | the background behind the opening statement of a node starting with `⚠` (built-ins: a muted amber a step off the theme's background, so the text keeps its own color) |
+| `codeBlock` | the background behind a code block, inside a tree or after it (built-ins: a neutral grey a step off the theme's background; it fills the code text, not the guides) |
 
 `depth` is a list of styles for branch labels and the guides beneath them, level 1 first (built-ins: tan, clay, rosewood, stone). Entry `i` merges onto level `i+1`; `{}` leaves a level unchanged; entries past the built-in four extend the list. The last entry is reused for deeper levels.
 

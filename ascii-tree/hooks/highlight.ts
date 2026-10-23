@@ -280,6 +280,8 @@ const rangeRuns = (pieces: Piece[], ranged: readonly Rule[], palette: Palette): 
 export const labelRuns = (row: Row, palette: Palette, rules: readonly Rule[] = DEFAULT_RULES): Run[] => {
   if (row.label === '') return []
   if (row.role === 'rule') return [{ text: row.label, style: { dimColor: true } }]
+  // Code is drawn as written: no tokens, no key split, no ranges.
+  if (row.role === 'code') return [{ text: row.label, style: palette.codeBlock }]
   if (row.role === 'root') return [{ text: row.label, style: palette.seed }]
   const base = row.hasChildren ? depthStyle(palette, Math.max(row.depth, 1)) : {}
   // A node's hard-break continuation lines are its body: never a key, never ranged.

@@ -1,7 +1,7 @@
 import type { Register } from 'claude-code'
 
 import { labelRuns, pathHref, prefixRuns, resolvePath, tokenize, type Run } from './highlight'
-import { layoutTree, splitParts, type Row } from './lib'
+import { layoutTree, splitCode, splitParts, type Piece, type Row } from './lib'
 import {
   EMPTY_CONFIG,
   parseConfig,
@@ -162,15 +162,16 @@ export const register: Register = on => {
     const { palette: drawn, rules } = await currentLook(io)
 
     // Lay every tree out first: any that does not parse leaves it to the engine.
-    const laid: (Row[] | string)[] = []
+    // Prose keeps its code fences apart, to draw them as blocks.
+    const laid: (Row[] | Piece)[] = []
     for (const part of parts) {
       if (part.kind === 'prose') {
-        laid.push(part.text)
+        laid.push(...splitCode(part.text))
         continue
       }
       let rows: Row[] | undefined
       try {
-        rows = layoutTree(part.text, room)
+        rows = layoutTree(part.text, room, part.code)
       } catch {
         rows = undefined
       }
@@ -199,8 +200,8 @@ export const register: Register = on => {
     const relative = new Set<string>()
     if (cwd !== undefined) {
       const written = laid
-        .flatMap(part => (typeof part === 'string' ? [] : part))
-        .filter(row => row.role !== 'root')
+        .flatMap(part => (Array.isArray(part) ? part : []))
+        .filter(row => row.role !== 'root' && row.role !== 'code')
         .flatMap(row => tokenize(row.whole, rules))
         .filter(t => t.kind === 'path' && pathHref(t.text, home) === undefined)
         .map(t => t.text)
@@ -218,14 +219,22 @@ export const register: Register = on => {
       return pathHref(run.path, home, relative.has(run.path) ? cwd : undefined)
     }
 
-    const { Box, Text, Link, Markdown } = $.ui.resolve(e)
+    const { Box, Text, Link, Markdown, Code } = $.ui.resolve(e)
     const runs = (row: Row): Run[] => [...prefixRuns(row, drawn), ...labelRuns(row, drawn, rules)]
     // A blank row between parts, so a command block after a tree stands apart.
     return (
       <Box flexDirection="column" gap={1}>
         {laid.map(part =>
-          typeof part === 'string' ? (
-            <Markdown text={part} />
+          !Array.isArray(part) ? (
+            part.kind === 'prose' ? (
+              <Markdown text={part.text} />
+            ) : (
+              // The engine's highlighter colors the tokens; codeBlock lays its
+              // background behind them. No gutter, so a selection copies the bare code.
+              <Box backgroundColor={drawn.codeBlock.backgroundColor}>
+                <Code source={part.text} language={part.lang} />
+              </Box>
+            )
           ) : (
             <Box flexDirection="column">
               {part.map(row =>

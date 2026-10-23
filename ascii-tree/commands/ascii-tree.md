@@ -13,10 +13,25 @@ Content:
 
 
 Formatting (the `ascii-tree` mod styles and wraps the tree, so keep it plain):
-- Put the whole tree in one ``` code block with no language tag. Never write three backticks inside the tree, not even mid-line; say "code block" instead. No markdown inside it (no `**`), except backticks: wrap code, commands and paths in them and the mod colors them and drops the backticks.
+- Put the whole tree in one ``` code block with no language tag (a command mid-tree splits it, see below). Never write three backticks inside the tree, not even mid-line; say "code block" instead. No markdown inside it (no `**`), except backticks: wrap code, commands and paths in them and the mod colors them and drops the backticks.
 - Write paths to real files and folders in full, from `~/` or `/` (`~/Coding/app/src/main.ts`, not `src/main.ts`), so they are clickable; a relative path links only when it exists under the working directory. Leave generic paths in a general explanation (`.git/config`) as written.
 - A path with spaces goes in backticks or quotes (`~/Library/Application Support/x`), so it is colored and linked whole.
 - Commands for the user to run go after the tree, not in it, so they copy without the tree's lines: one code block with a language tag (`sh`, `bash`, ...) right after the tree's code block, all the commands in run order, nothing else after it. In the tree, say what they do and refer to them ("run the commands below"). Short commands named in passing, not meant to be copied (`git status`), stay inline in backticks.
+- A command that belongs to one particular step may instead go in the tree, right under that step, but only in this split form: close the tree's code block after the step's line, write the command in its own code block (with its language tag), then continue the tree in a NEW code block whose first line is the guides, as if the tree had never been interrupted. Never start that block with a root line, and put no prose between the blocks. Each command stays its own block. Example:
+  ```
+  ● Deploy
+  ┣━━ Build
+  ┃    └── Run the build, then check the output folder:
+  ```
+  ```sh
+  npm ci
+  npm run build
+  ```
+  ```
+  ┃
+  ┗━━ Ship
+       └── Upload the build
+  ```
 - Root: `● Title` on its own line.
 - Top-level spine uses heavy lines: `┃` for the vertical, `┣━━` for each top-level branch, `┗━━` for the last one. Leave a `┃` spacer line between top-level branches.
 - Deeper levels use light lines: `│`, `├──`, `└──`.

@@ -57,7 +57,7 @@ claude plugin install ascii-tree@claude-mods
 
 Run `/ascii-tree` (or `/tree`), with or without a question. Claude keeps answering as a tree until you tell it to stop.
 
-Commands for you to run come in a code block after the tree, so `/copy` grabs just the commands, without the tree's lines.
+Commands for you to run come in a code block after the tree, so `/copy` grabs just the commands, without the tree's lines. A command that belongs to one step can sit in the tree itself, drawn as a code block under that step; each is still its own block for `/copy`.
 
 ## Customize
 
