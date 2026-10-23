@@ -41,6 +41,8 @@ Roles, each one style:
 | `quote` | "quoted text" |
 | `arrow` | arrows such as the right-arrow |
 | `attention` | the background behind the opening statement of a node starting with `⚠` (built-ins: a muted amber a step off the theme's background, so the text keeps its own color) |
+| `decision` | the background behind the opening statement of a node starting with `◆`, a decision the user must make (built-ins: a muted purple a step off the theme's background) |
+| `recommended` | the background behind a whole node marked `(recommended)`, the option an agent recommends (built-ins: a muted green a step off the theme's background) |
 | `codeBlock` | the background behind a code block, inside a tree or after it (built-ins: a neutral grey a step off the theme's background; it fills the code text, not the guides) |
 
 `depth` is a list of styles for branch labels and the guides beneath them, level 1 first (built-ins: tan, clay, rosewood, stone). Entry `i` merges onto level `i+1`; `{}` leaves a level unchanged; entries past the built-in four extend the list. The last entry is reused for deeper levels.
@@ -89,7 +91,9 @@ Built-in rule names, in priority order (stable; a config relies on them):
 | `version` | `v1.2.3`, `1.2.3-beta.1` | `number` |
 | `number` | `12`, `3.5`, `12%`, `4 MiB`, `200ms` | `number` |
 | `arrow` | arrows | `arrow` |
-| `attention` | a label starting with `⚠` (scope `lead`); its `when` puts it in the prompt: something the user must act on or could be harmed by, at most 1–2 per tree | `attention` |
+| `attention` | a label starting with `⚠` (scope `lead`); its `when` puts it in the prompt: critical information the user must not miss, or something they must act on, at most 1–2 per tree | `attention` |
+| `decision` | a label starting with `◆` (scope `lead`); its `when` asks for it on a decision the user must make, with the options as its children | `decision` |
+| `recommended` | a label containing `(recommended)`, any case (scope `label`); its `when` asks for it on the option the model recommends, at most one per decision | `recommended` |
 
 To recolor every kind of path at once, change the `path` palette role; the three path rules and `url` all use it. Disabling one path rule (`"rel-path": false`) stops only that pattern.
 
@@ -113,10 +117,10 @@ Add a marker of your own, and tell the model when to use it:
 { "highlights": { "lock": { "match": "^🔒", "scope": "lead", "when": "a security-sensitive step", "style": { "underline": true } } } }
 ```
 
-Give a decision marker a subtle purple background that reads on both themes (`light` replaces just the background on a light theme):
+Give a security marker a subtle blue background that reads on both themes (`light` replaces just the background on a light theme):
 
 ```json
-{ "highlights": { "decision": { "match": "^◆", "scope": "lead", "when": "a decision the user must make, stated as the choice itself", "style": { "backgroundColor": "#33283F" }, "light": { "backgroundColor": "#EDE3F7" } } } }
+{ "highlights": { "lock": { "match": "^🔒", "scope": "lead", "when": "a security-sensitive step", "style": { "backgroundColor": "#1F2B3A" }, "light": { "backgroundColor": "#E1EBF7" } } } }
 ```
 
 Turn off hex swatches, and give warnings a muted red background instead of amber:

@@ -93,6 +93,10 @@ export type Palette = {
    * off the terminal's, so it stands out while the text keeps its own color.
    */
   attention: Style
+  /** A node starting with ◆, a decision the user must make: a background a step off the terminal's. */
+  decision: Style
+  /** A node marked "(recommended)": the option an agent recommends, a background a step off the terminal's. */
+  recommended: Style
   /**
    * A code block, inside a tree or after it: a background a step off the
    * terminal's, neutral grey, so code reads as a block while its text keeps
@@ -128,8 +132,12 @@ export const LINEAGE: Palette = {
   arrow: { dimColor: true },
   // A muted amber a little lighter than a dark background: white text reads on it.
   attention: { backgroundColor: '#3B3223' },
-  // Neutral grey a step lighter than a dark background (~#1E1E1E): default text reads on it.
-  codeBlock: { backgroundColor: '#2D2D2D' },
+  // A muted green a little lighter than a dark background: white text reads on it.
+  // A muted purple a little lighter than a dark background: white text reads on it.
+  decision: { backgroundColor: '#33283F' },
+  recommended: { backgroundColor: '#22342A' },
+  // Neutral grey barely lighter than a dark background: it marks the block without drawing the eye.
+  codeBlock: { backgroundColor: '#1F1F1F' },
 }
 
 /**
@@ -154,8 +162,12 @@ export const LINEAGE_LIGHT: Palette = {
   arrow: { dimColor: true },
   // A pale amber a little darker than white: black text reads on it.
   attention: { backgroundColor: '#F6EBC9' },
-  // Neutral grey a step darker than white: black text reads on it.
-  codeBlock: { backgroundColor: '#EBEBEB' },
+  // A pale green a little darker than white: black text reads on it.
+  // A pale purple a little darker than white: black text reads on it.
+  decision: { backgroundColor: '#EDE3F7' },
+  recommended: { backgroundColor: '#E2F2E5' },
+  // Neutral grey barely darker than white: it marks the block without drawing the eye.
+  codeBlock: { backgroundColor: '#F5F5F5' },
 }
 
 /**

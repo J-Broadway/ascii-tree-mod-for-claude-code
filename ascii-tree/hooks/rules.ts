@@ -5,7 +5,7 @@
 import { parseStyle, type Style } from './palette'
 
 /** The token classes the label highlighter finds; `custom` is any user rule. */
-export type TokenKind = 'code' | 'path' | 'number' | 'quote' | 'arrow' | 'hex' | 'attention' | 'custom'
+export type TokenKind = 'code' | 'path' | 'number' | 'quote' | 'arrow' | 'hex' | 'attention' | 'decision' | 'recommended' | 'custom'
 
 /**
  * What a rule colors: `token` just the matched text; `lead` the label's
@@ -108,7 +108,27 @@ export const BUILTIN: readonly (RuleDef & { name: string })[] = [
     kind: 'attention',
     match: /^⚠/.source,
     scope: 'lead',
-    when: 'something the user must act on or could be harmed by; at most 1–2 per tree',
+    when: 'critical information the user must not miss, or something they must act on or could be harmed by; at most 1–2 per tree',
+  },
+  // A decision the user must make: its opening statement (◆ included) sits on
+  // the palette's `decision` background; its options hang beneath it, the
+  // suggested one marked by the `recommended` rule.
+  {
+    name: 'decision',
+    kind: 'decision',
+    match: /^◆/.source,
+    scope: 'lead',
+    when: 'a decision the user must make, stated as the choice itself, with its options as the node\'s children',
+  },
+  // The option an agent recommends among several: the whole node sits on the
+  // palette's `recommended` background, so the pick stands out from the rest.
+  {
+    name: 'recommended',
+    kind: 'recommended',
+    match: /\(recommended\)/.source,
+    ignoreCase: true,
+    scope: 'label',
+    when: 'the option you recommend among choices, at the end of its line; at most one per decision',
   },
 ]
 
@@ -244,11 +264,14 @@ export const compileRules = (
 }
 
 /**
- * The marker a rule's match stands for: the literal text of a match anchored
- * at the label's start (`^⚠` is `⚠`), so the prompt can say "start a node
- * with ⚠". Undefined for any other pattern.
+ * The marker a rule's match stands for, when the pattern is literal text
+ * (punctuation escaped, `\(recommended\)` is `(recommended)`), so the prompt
+ * can name it: `anchored` when it must open the label (`^⚠`), for "start a
+ * node with ⚠". Undefined for any other pattern.
  */
-export const markerOf = (rule: Rule): string | undefined => {
-  const m = /^\^([^\\^$.|?*+()[\]{}]+)$/.exec(rule.def.match)
-  return m === null ? undefined : m[1]!.trim() || undefined
+export const markerOf = (rule: Rule): { text: string; anchored: boolean } | undefined => {
+  const m = /^(\^?)((?:\\[^\w\s]|[^\\^$.|?*+()[\]{}])+)$/.exec(rule.def.match)
+  if (m === null) return undefined
+  const text = m[2]!.replace(/\\([^\w\s])/g, '$1').trim()
+  return text === '' ? undefined : { text, anchored: m[1] === '^' }
 }

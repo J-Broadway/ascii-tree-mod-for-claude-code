@@ -1036,7 +1036,7 @@ test('config: no file, an empty file or {} leaves the built-in look as it was', 
 test('config: the built-in rules keep their documented names and order', async () => {
   expect(DEFAULT_RULES.map(r => r.name)).toEqual([
     'code', 'url', 'quote', 'home-path', 'abs-path', 'rel-path', 'hex', 'command', 'flag', 'date', 'version',
-    'number', 'arrow', 'attention',
+    'number', 'arrow', 'attention', 'decision', 'recommended',
   ])
 })
 
@@ -1303,7 +1303,9 @@ test('config: attention draws as a subtle banner in a mounted tree', async ($, o
 
 /** The prompt as the hook returns it with no user files: the built-in markers listed. */
 const BASE = 'BASE PROMPT\n\n## Highlight markers\nThe mod highlights these; use each only where it fits:\n' +
-  '- Start a node with `⚠` only for something the user must act on or could be harmed by; at most 1–2 per tree.\n'
+  '- Start a node with `⚠` only for critical information the user must not miss, or something they must act on or could be harmed by; at most 1–2 per tree.\n' +
+  '- Start a node with `◆` only for a decision the user must make, stated as the choice itself, with its options as the node\'s children.\n' +
+  '- Write `(recommended)` in a node only for the option you recommend among choices, at the end of its line; at most one per decision.\n'
 
 test('preferences: appended to the tree commands\' prompt under a heading, bare or namespaced', async ($, on) => {
   userFiles(on, { [PREFS]: '  Prefer at most 3 levels.\nAlways name the owner.  \n' })
@@ -1346,9 +1348,11 @@ test('markers: a rule\'s `when` puts it in the prompt; disabling a rule takes it
       '- Text matching /\\bTODO\\b/i is highlighted (todo): write it for work left undone.\n',
   )
   // A rule turned off is not offered to the model; a built-in's `when` can be reworded.
-  expect(markerGuide(lookOf('{"highlights":{"attention":false}}').look.rules)).toBeUndefined()
+  expect(markerGuide(lookOf('{"highlights":{"attention":false,"decision":false,"recommended":false}}').look.rules)).toBeUndefined()
   expect(markerGuide(lookOf('{"highlights":{"attention":{"when":"prod changes"}}}').look.rules)).toBe(
-    '## Highlight markers\nThe mod highlights these; use each only where it fits:\n- Start a node with `⚠` only for prod changes.',
+    '## Highlight markers\nThe mod highlights these; use each only where it fits:\n- Start a node with `⚠` only for prod changes.\n' +
+      '- Start a node with `◆` only for a decision the user must make, stated as the choice itself, with its options as the node\'s children.\n' +
+      '- Write `(recommended)` in a node only for the option you recommend among choices, at the end of its line; at most one per decision.',
   )
   // A `when` that is not a short string skips the rule.
   expect(lookOf('{"highlights":{"x":{"match":"^x","when":"","style":{"dimColor":true}}}}').skipped).toHaveLength(1)
@@ -1518,4 +1522,26 @@ test('copy: in fullscreen each code block gets a copy control that copies it and
   const plain = await $.ui.mount({ ...message(text), viewport: { columns: 80, rows: 40 } })
   expect(await plain.findAll({ type: 'Button' })).toEqual([])
   await plain.unmount()
+})
+
+test('recommended: a node marked (recommended) sits on the recommended background, every row of it', async () => {
+  const bg = LINEAGE.recommended.backgroundColor
+  const rows = rowsOf('● T\n┗━━ Pick\n     ├── A. Window: 5 min offline\n     └── B. Zero downtime: two deploys, reads both schemas first (Recommended)', 30)
+    .filter(r => r.role !== 'root')
+  const pick = rows.filter(r => r.whole.includes('Recommended'))
+  expect(pick.length).toBeGreaterThan(1)
+  for (const row of pick) expect(labelRuns(row, LINEAGE).every(r => r.style.backgroundColor === bg)).toBe(true)
+  const other = rows.find(r => r.whole.startsWith('A.'))!
+  expect(labelRuns(other, LINEAGE).some(r => r.style.backgroundColor !== undefined)).toBe(false)
+  // No key split on the marked option: the highlight is the whole node.
+  expect(labelRuns(pick[0]!, LINEAGE).some(r => r.style === LINEAGE.leafKey)).toBe(false)
+  expect(LINEAGE_LIGHT.recommended.backgroundColor).not.toBe(bg)
+})
+
+test('decision: a node starting with ◆ gets its opening statement on the decision background by default', async () => {
+  expect(drawnWith('◆ Pick a deploy: each trades downtime for effort')).toEqual([
+    { text: '◆ Pick a deploy:', style: LINEAGE.decision },
+    { text: ' each trades downtime for effort', style: {} },
+  ])
+  expect(drawnWith('◆ Pick', undefined, 'light')[0]?.style).toEqual(LINEAGE_LIGHT.decision)
 })
