@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-8B5A2B.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-C8A165.svg)](https://claude.com/claude-code)
-[![Version](https://img.shields.io/badge/version-0.8.0-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.9.0-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
 
 <img src="docs/images/ascii-tree-styled.png" alt="Claude explaining /ascii-tree, drawn as a colored ASCII tree" width="760">
 
