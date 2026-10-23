@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { labelRuns, pathHref, prefixRuns, resolvePath, tokenize, type Run } from './highlight'
+import { labelRuns, pathHref, prefixRuns, resolvePath, shellPath, tokenize, type Run } from './highlight'
 import { layoutTree, splitCode, splitParts, type Piece, type Row } from './lib'
 import {
   EMPTY_CONFIG,
@@ -289,7 +289,8 @@ export const register: Register = (on, options) => {
         held.push(run)
         if (!endsHere(run)) continue
         pieces.push(<Text>{held.map(r => drawRun(row, r))}</Text>, <Text> </Text>)
-        pieces.push(control(`path:${e.requestId}:${pathKeys++}`, run.path!, ['⧉', '✓']))
+        // Copied ready for a shell: spaces and the like escaped.
+        pieces.push(control(`path:${e.requestId}:${pathKeys++}`, shellPath(run.path!), ['⧉', '✓']))
         held = []
       }
       if (pieces.length === 0) return <Text wrap="truncate-end">{all.map(run => drawRun(row, run))}</Text>

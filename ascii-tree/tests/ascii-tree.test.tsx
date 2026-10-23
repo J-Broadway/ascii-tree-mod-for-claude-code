@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test, type Engine } from 'claude-code/testing'
 
-import { DEFAULT_RULES, labelRuns, leadEnd, leafKey, pathHref, prefixRuns, resolvePath, tokenize } from '../hooks/highlight'
+import { DEFAULT_RULES, labelRuns, leadEnd, leafKey, pathHref, prefixRuns, resolvePath, shellPath, tokenize } from '../hooks/highlight'
 import { applyPalette, EMPTY_CONFIG, markerGuide, parseConfig, resolveLook, userPath, withPreferences } from '../hooks/config'
 import { compileRules } from '../hooks/rules'
 import { classify, continuations, isRule, isTree, layoutTree, normalizeIndent, splitCode, splitParts, wrapTreeLine } from '../hooks/lib'
@@ -1125,10 +1125,10 @@ test('config: attention banners the lead of a label starting with ⚠, paths exc
   // The banner ends at the colon as drawn, after `code` drops its backticks.
   expect(drawnWith('⚠ Run `npm ci` first: then test').at(-1)).toEqual({ text: ' then test', style: {} })
   // Tokens inside the banner keep their colors on its background; a path keeps
-  // its whole look (and link).
+  // its whole look (and link), on the same background.
   const runs = drawnWith('⚠ Edit ~/a.ts or 3 files. More')
   expect(runs[0]).toEqual({ text: '⚠ Edit ', style: banner })
-  expect(runs[1]).toEqual({ text: '~/a.ts', style: LINEAGE.path, path: '~/a.ts' })
+  expect(runs[1]).toEqual({ text: '~/a.ts', style: { ...LINEAGE.path, ...banner }, path: '~/a.ts' })
   expect(runs[2]).toEqual({ text: ' or ', style: banner })
   expect(runs[3]).toEqual({ text: '3', style: { ...LINEAGE.number, ...banner } })
   // A ⚠ elsewhere is plain text; a branch keeps its depth color on the banner.
@@ -1623,6 +1623,20 @@ test('path copy: a quoted path with a space that wraps at the space still gets i
   const buttons = (await ui.findAll({ type: 'Button' })).filter(b => String(b.props.key).startsWith('path:'))
   expect(buttons).toHaveLength(1)
   await ui.press({ key: String(buttons[0]!.props.key) })
-  expect(copied).toEqual(['~/Library/Application Support'])
+  expect(copied).toEqual(['~/Library/Application\\ Support'])
   await ui.unmount()
+})
+
+test('shellPath: escapes what a shell would split on, keeps ~ expandable, leaves URLs alone', () => {
+  expect(shellPath('~/Library/Application Support')).toBe('~/Library/Application\\ Support')
+  expect(shellPath('~/Library/Application\\ Support')).toBe('~/Library/Application\\ Support')
+  expect(shellPath("/tmp/it's (draft) & more")).toBe("/tmp/it\\'s\\ \\(draft\\)\\ \\&\\ more")
+  expect(shellPath('/Users/me/plain/path.ts')).toBe('/Users/me/plain/path.ts')
+  expect(shellPath('https://example.com/a?b=1&c=2')).toBe('https://example.com/a?b=1&c=2')
+})
+
+test('attention: a path inside the highlighted statement takes the background, keeping its own look', () => {
+  const runs = drawnWith('⚠ ~/Library/Application Support in quotes fails: the ~ is not expanded')
+  const path = runs.find(r => r.path !== undefined)!
+  expect(path.style).toEqual({ ...LINEAGE.path, backgroundColor: LINEAGE.attention.backgroundColor })
 })

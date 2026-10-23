@@ -158,6 +158,19 @@ export const resolvePath = (written: string, home?: string, cwd?: string): strin
 }
 
 /**
+ * A written path as a shell takes it: a space or other shell character
+ * escaped with a backslash (`~/Library/Application\ Support`, as Tab
+ * completion writes it), the leading `~` left bare so the shell still expands
+ * it. A space already escaped stays one escape; a URL is left as it is.
+ */
+export const shellPath = (written: string): string => {
+  if (/^[a-z]+:\/\//i.test(written)) return written
+  const path = written.replace(/\\ /g, ' ')
+  const head = path.startsWith('~/') ? '~/' : ''
+  return head + path.slice(head.length).replace(/([\s'"()&;$`!*?[\]{}<>|#\\])/g, '\\$1')
+}
+
+/**
  * Where a path token links: a URL to itself, a path to the `file://` URL of
  * what it resolves to (a terminal opens a directory's in the file manager).
  * A relative path links only given `cwd`, which the caller passes once it
@@ -251,7 +264,8 @@ const rangeRulesOf = (label: string, rules: readonly Rule[]): Rule[] =>
  * Lays the `lead` and `label` rules over a label's pieces: the rule's style
  * (its kind's palette role, then its own) wins over the tokens inside its
  * range, so the highlight reads as one, except paths, which keep their own
- * look and stay links. Laid over the whole label before it is cut into rows,
+ * look and stay links, taking only the background (so the highlight has no
+ * gap where a path sits). Laid over the whole label before it is cut into rows,
  * so a statement that wraps is highlighted on every row it reaches.
  */
 const rangeRuns = (pieces: Piece[], ranged: readonly Rule[], palette: Palette): Piece[] => {
@@ -266,7 +280,11 @@ const rangeRuns = (pieces: Piece[], ranged: readonly Rule[], palette: Palette): 
     out = out.flatMap((piece): Piece[] => {
       const from = at
       at += piece.text.length
-      if (piece.path || from >= end) return [piece]
+      if (from >= end) return [piece]
+      if (piece.path !== undefined) {
+        const { backgroundColor } = style
+        return [backgroundColor === undefined ? piece : { ...piece, style: { ...piece.style, backgroundColor } }]
+      }
       const cut = Math.min(piece.text.length, end - from)
       const [inside, rest] = split(piece, cut)
       const lit = { ...inside, style: { ...piece.style, ...style } }
