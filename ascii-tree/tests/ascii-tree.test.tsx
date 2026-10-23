@@ -250,7 +250,7 @@ test('key: value leaves color a short key', async () => {
   expect(labelRuns(row, LINEAGE)).toEqual([
     { text: 'local:', style: { color: LEAF } },
     { text: ' ', style: {} },
-    { text: '~/.claude/x', style: { color: PATH, underline: true }, path: true },
+    { text: '~/.claude/x', style: { color: PATH, underline: true }, path: '~/.claude/x' },
   ])
 })
 
@@ -415,7 +415,7 @@ test('bug B: a depth-2 branch label is bold d2 throughout, no key split', async 
   expect(labelRuns(rows[2]!, LINEAGE)).toEqual([{ text: 'Files', style: { color: TAN, weight: 'bold' } }])
   expect(labelRuns(rows[3]!, LINEAGE)).toEqual([
     { text: 'new: ', style: { color: D2, weight: 'bold' } },
-    { text: 'hooks/palette.ts', style: { color: PATH, weight: 'bold', underline: true }, path: true },
+    { text: 'hooks/palette.ts', style: { color: PATH, weight: 'bold', underline: true }, path: 'hooks/palette.ts' },
   ])
   expect(labelRuns(rows[5]!, LINEAGE)[0]).toEqual({ text: 'new: ', style: { color: D2, weight: 'bold' } })
   // A leaf keeps its green key.
@@ -660,7 +660,7 @@ test('breaks: key: green on the first line only', async () => {
   expect(labelRuns(rows[2]!, LINEAGE)).toEqual([{ text: 'other: second line', style: {} }])
   // Tokens still highlight on continuation lines.
   const tok = rowsOf('r\n└── a\n    see ~/x.ts')
-  expect(labelRuns(tok[2]!, LINEAGE)[1]).toEqual({ text: '~/x.ts', style: { color: PATH, underline: true }, path: true })
+  expect(labelRuns(tok[2]!, LINEAGE)[1]).toEqual({ text: '~/x.ts', style: { color: PATH, underline: true }, path: '~/x.ts' })
 })
 
 test('breaks: misaligned continuation lines normalize to the label column', async () => {
@@ -770,12 +770,40 @@ test('links: none in Cursor / VS Code, whose terminal links paths itself', async
   await ui.unmount()
 })
 
-test('links: a path a wrap split across rows is not linked', async ($, on) => {
+test('links: a path a wrap split across rows links every piece to the whole path', async ($, on) => {
   mock.env(on, { TERM_PROGRAM: 'WezTerm', HOME: '/Users/me' })
   const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns: 34, rows: 40 } })
-  const hrefs = (await ui.findAll({ type: 'Link' })).map(l => l.props.href)
-  expect(hrefs).not.toContain(expect.stringContaining('claude-mods'))
+  const links = await ui.findAll({ type: 'Link' })
+  const split = links.filter(l => l.props.href === 'file:///Users/me/Coding/claude-mods/ascii-tree')
+  expect(split.length).toBeGreaterThan(1)
+  // Each piece keeps its underline: it is a link.
+  for (const link of split) expect((link.children[0] as { props: { underline?: boolean } }).props.underline).toBe(true)
   await ui.unmount()
+})
+
+test('links: a wrapped URL stays one link, its digits drawn as the URL', async ($, on) => {
+  mock.env(on, { TERM_PROGRAM: 'WezTerm', HOME: '/Users/me' })
+  const url = 'http://localhost:3000/admin/collections/pages/49'
+  const tree = `● T\n┗━━ Review\n     └── ${url} (design specimen)`
+  const ui = await $.ui.mount({ ...message(fence(tree)), viewport: { columns: 40, rows: 40 } })
+  const links = await ui.findAll({ type: 'Link' })
+  expect(links.length).toBeGreaterThan(1)
+  expect(links.every(l => l.props.href === url)).toBe(true)
+  const texts = links.map(l => (l.children[0] as { props: { color?: string }; children: string[] }))
+  expect(texts.map(t => t.children[0]).join('')).toBe(url)
+  expect(texts.every(t => t.props.color === PATH)).toBe(true)
+  await ui.unmount()
+})
+
+test('links: a wrapped backticked path keeps no backticks and colors no digits as numbers', async () => {
+  const path = '/private/tmp/claude-501/-Users-me-Coding-site/5c8f21c7-e76c-4cfc-b08b-6f8b61d04985/scratchpad/cards/'
+  const rows = rowsOf(`● T\n┗━━ Screenshots: \`${path}\` (pass2-after/)`, 40).filter(r => r.role !== 'root')
+  const runs = rows.flatMap(row => labelRuns(row, LINEAGE))
+  expect(runs.map(r => r.text).join('')).not.toContain('`')
+  const pieces = runs.filter(r => r.path === path)
+  expect(pieces.length).toBeGreaterThan(1)
+  expect(pieces.map(r => r.text).join('')).toBe(path)
+  expect(pieces.every(r => r.style.color === PATH)).toBe(true)
 })
 
 test('palette: light themes draw in the light palette, others in the dark one', async () => {
@@ -1088,7 +1116,7 @@ test('config: attention banners the lead of a label starting with ⚠, paths exc
   // its whole look (and link).
   const runs = drawnWith('⚠ Edit ~/a.ts or 3 files. More')
   expect(runs[0]).toEqual({ text: '⚠ Edit ', style: banner })
-  expect(runs[1]).toEqual({ text: '~/a.ts', style: LINEAGE.path, path: true })
+  expect(runs[1]).toEqual({ text: '~/a.ts', style: LINEAGE.path, path: '~/a.ts' })
   expect(runs[2]).toEqual({ text: ' or ', style: banner })
   expect(runs[3]).toEqual({ text: '3', style: { ...LINEAGE.number, ...banner } })
   // A ⚠ elsewhere is plain text; a branch keeps its depth color on the banner.

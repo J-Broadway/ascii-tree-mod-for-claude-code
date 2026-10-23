@@ -6,10 +6,11 @@ import { defaultRules, type Rule, type TokenKind } from './rules'
 
 /** A run of text and its style. */
 /**
- * A run of text and its style; `path` marks a path or URL token, the one kind
- * whose underline means a link (and is dropped where it can't be one).
+ * A run of text and its style. `path` is set on a path or URL token's run to
+ * the whole token, the one kind whose underline means a link (dropped where
+ * it can't be one): a piece of a path a wrap split still links to all of it.
  */
-export type Run = { text: string; style: Style; path?: true }
+export type Run = { text: string; style: Style; path?: string }
 
 export type { TokenKind } from './rules'
 
@@ -188,7 +189,7 @@ const tokenRuns = (text: string, base: Style, palette: Palette, rules: readonly 
     if (t.kind === undefined || t.rule === undefined) return { text: t.text, raw: t.raw, pad, style: base }
     const own = t.kind === 'hex' ? { color: hexColor(t.text) } : roleStyle(palette, t.kind)
     const style = { ...base, ...own, ...t.rule.style }
-    return t.kind === 'path' ? { text: t.text, raw: t.raw, pad, style, path: true } : { text: t.text, raw: t.raw, pad, style }
+    return t.kind === 'path' ? { text: t.text, raw: t.raw, pad, style, path: t.text } : { text: t.text, raw: t.raw, pad, style }
   })
 
 /** The palette role a rule's kind draws in; `hex` and `custom` have none. */

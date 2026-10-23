@@ -211,12 +211,11 @@ export const register: Register = on => {
         }),
       )
     }
-    // A run links when it is a whole path token of its node's label: a path a
-    // wrap split across rows would link to a fragment of itself.
+    // A path run links to its whole token, so each piece of a path a wrap
+    // split across rows opens the same place.
     const href = (row: Row, run: Run): string | undefined => {
-      if (!linking || row.role === 'root') return undefined
-      if (!tokenize(row.whole, rules).some(t => t.kind === 'path' && t.text === run.text)) return undefined
-      return pathHref(run.text, home, relative.has(run.text) ? cwd : undefined)
+      if (!linking || row.role === 'root' || run.path === undefined) return undefined
+      return pathHref(run.path, home, relative.has(run.path) ? cwd : undefined)
     }
 
     const { Box, Text, Link, Markdown } = $.ui.resolve(e)
