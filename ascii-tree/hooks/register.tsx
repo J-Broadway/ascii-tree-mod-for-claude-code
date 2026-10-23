@@ -15,6 +15,8 @@ import {
 } from './config'
 
 export const register: Register = on => {
+  // Copy controls pressed in the last 2 seconds, by key: they read "copied".
+  const copied = new Set<string>()
   // The look (palette and highlight rules) follows the theme setting and the
   // user's config.json: resolved once, again after the theme changes (which
   // redraws the trees already on screen), and again whenever config.json's
@@ -219,8 +221,40 @@ export const register: Register = on => {
       return pathHref(run.path, home, relative.has(run.path) ? cwd : undefined)
     }
 
-    const { Box, Text, Link, Markdown, Code } = $.ui.resolve(e)
+    const { Box, Text, Link, Markdown, Code, Button } = $.ui.resolve(e)
     const runs = (row: Row): Run[] => [...prefixRuns(row, drawn), ...labelRuns(row, drawn, rules)]
+    // Fullscreen passes clicks to the drawing, so each code block gets a copy
+    // control there; elsewhere a click is the terminal's, and /copy picks blocks.
+    const clickable = e.viewport?.isFullscreen === true
+    let copies = 0
+    // Right-aligned, so it reads as the block's control rather than its text;
+    // a press says "copied" in place for 2 seconds (a failure, in a toast).
+    const copyButton = (text: string) => {
+      const key = `copy:${e.requestId}:${copies++}`
+      return (
+        <Box flexGrow={1} justifyContent="flex-end">
+          <Button
+            key={key}
+            label={copied.has(key) ? '✓ copied' : '⧉ copy'}
+            plain
+            dimColor
+            onPress={async press => {
+              const done = await $.ui.copy({ text, surface: press.surface })
+              if (!done.isCopied) {
+                $.ui.toast('Could not copy')
+                return
+              }
+              copied.add(key)
+              $.ui.invalidate('ui.render')
+              $.clock.after(2000, () => {
+                copied.delete(key)
+                $.ui.invalidate('ui.render')
+              })
+            }}
+          />
+        </Box>
+      )
+    }
     // A blank row between parts, so a command block after a tree stands apart.
     return (
       <Box flexDirection="column" gap={1}>
@@ -231,13 +265,16 @@ export const register: Register = on => {
             ) : (
               // The engine's highlighter colors the tokens; codeBlock lays its
               // background behind them. No gutter, so a selection copies the bare code.
-              <Box backgroundColor={drawn.codeBlock.backgroundColor}>
-                <Code source={part.text} language={part.lang} />
+              <Box flexDirection="column">
+                <Box backgroundColor={drawn.codeBlock.backgroundColor}>
+                  <Code source={part.text} language={part.lang} />
+                </Box>
+                {clickable && copyButton(part.text)}
               </Box>
             )
           ) : (
             <Box flexDirection="column">
-              {part.map(row =>
+              {part.flatMap(row => [
                 row.prefix === '' && row.label === '' ? (
                   <Text> </Text>
                 ) : (
@@ -254,7 +291,18 @@ export const register: Register = on => {
                     })}
                   </Text>
                 ),
-              )}
+                // Under a code block in the tree: the control, behind the block's guides.
+                ...(clickable && row.copy !== undefined
+                  ? [
+                      <Box flexDirection="row">
+                        {prefixRuns(row, drawn).map(run => (
+                          <Text {...run.style}>{run.text}</Text>
+                        ))}
+                        {copyButton(row.copy)}
+                      </Box>,
+                    ]
+                  : []),
+              ])}
             </Box>
           ),
         )}

@@ -1487,3 +1487,35 @@ test('code after the tree: a code fence is drawn as a codeBlock Code, bare sourc
   await ui.unmount()
   expect(splitCode('a\n\n```ts\nlet x\n```\nb').map(p => p.kind)).toEqual(['prose', 'code', 'prose'])
 })
+
+test('copy: in fullscreen each code block gets a copy control that copies it and says so for 2s; elsewhere none', async ($, on) => {
+  mock.env(on, { HOME: '/Users/me' })
+  const clock = mock.clock(on)
+  const copied: string[] = []
+  on('ui.copy', ($, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  const text =
+    fence('● Deploy\n┣━━ Build\n┃    └── Run the build:') +
+    '\n' +
+    '```sh\nnpm ci\nnpm run build\n```' +
+    '\n' +
+    fence('┃\n┗━━ Ship') +
+    '\n\n```sh\nscp -r dist host:\n```\n'
+  const full = await $.ui.mount({ ...message(text), viewport: { columns: 80, rows: 40, isFullscreen: true } })
+  const labels = async () => (await full.findAll({ type: 'Button' })).map(b => b.props.label)
+  expect((await full.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['copy:msg-1:0', 'copy:msg-1:1'])
+  expect(await labels()).toEqual(['⧉ copy', '⧉ copy'])
+  await full.press({ key: 'copy:msg-1:0' })
+  expect(copied).toEqual(['npm ci\nnpm run build'])
+  expect(await labels()).toEqual(['✓ copied', '⧉ copy'])
+  await clock.advance(2000)
+  expect(await labels()).toEqual(['⧉ copy', '⧉ copy'])
+  await full.press({ key: 'copy:msg-1:1' })
+  expect(copied).toEqual(['npm ci\nnpm run build', 'scp -r dist host:'])
+  await full.unmount()
+  const plain = await $.ui.mount({ ...message(text), viewport: { columns: 80, rows: 40 } })
+  expect(await plain.findAll({ type: 'Button' })).toEqual([])
+  await plain.unmount()
+})

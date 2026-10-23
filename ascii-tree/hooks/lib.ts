@@ -416,6 +416,8 @@ export type Row = {
   offset: number | undefined
   /** On a node's hard-break continuation lines: their text is never a `key:`. */
   continuation: boolean
+  /** On a code block's last row: the block as written, for a copy control to put on the clipboard. */
+  copy?: string
 }
 
 /** Where each row's label starts in `whole`: the rows are its consecutive slices, less the spaces a wrap broke at. */
@@ -446,7 +448,7 @@ const TAB = '    '
 const codeRows = (code: readonly string[], nodeLine: string | undefined, nodeLineage: Lineage | undefined, cols: number): Row[] => {
   const prefix = stemOf(nodeLine?.match(GUIDE)?.[0] ?? '')
   const room = Math.max(cols - width(prefix), 4)
-  return code.flatMap(raw => {
+  const rows = code.flatMap(raw => {
     const text = raw.replace(/\t/g, TAB).replace(/\s+$/, '')
     // A wrapped line hangs at its own indentation, so the rows read as one statement.
     const indent = Math.min(text.length - text.trimStart().length, Math.max(room - 4, 0))
@@ -469,6 +471,9 @@ const codeRows = (code: readonly string[], nodeLine: string | undefined, nodeLin
       continuation: true,
     }))
   })
+  const last = rows[rows.length - 1]
+  if (last !== undefined) rows[rows.length - 1] = { ...last, copy: code.join('\n') }
+  return rows
 }
 
 /**
