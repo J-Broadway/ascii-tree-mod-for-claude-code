@@ -1,5 +1,5 @@
 import type { On } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type Engine } from 'claude-code/testing'
 
 import { DEFAULT_RULES, labelRuns, leadEnd, leafKey, pathHref, prefixRuns, resolvePath, tokenize } from '../hooks/highlight'
 import { applyPalette, EMPTY_CONFIG, markerGuide, parseConfig, resolveLook, userPath, withPreferences } from '../hooks/config'
@@ -767,6 +767,18 @@ test('links: none in Cursor / VS Code, whose terminal links paths itself', async
   const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns: 120, rows: 40 } })
   expect(await ui.findAll({ type: 'Link' })).toEqual([])
   expect(await ui.find({ type: 'Text', text: '/Users/me/Coding/claude-mods/ascii-tree' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('links: none in macOS Terminal, which has no OSC 8 links; paths drop their underline', async ($, on) => {
+  mock.env(on, { TERM_PROGRAM: 'Apple_Terminal', HOME: '/Users/me' })
+  const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns: 120, rows: 40 } })
+  expect(await ui.findAll({ type: 'Link' })).toEqual([])
+  const row = (await ui.find({ type: 'Text', text: /claude-mods\/ascii-tree/ })) as {
+    children: { props: Record<string, unknown>; children: unknown[] }[]
+  }
+  const path = row.children.find(run => run.children[0] === '/Users/me/Coding/claude-mods/ascii-tree')
+  expect(path?.props).toEqual({ color: PATH })
   await ui.unmount()
 })
 
@@ -1544,4 +1556,73 @@ test('decision: a node starting with ◆ gets its opening statement on the decis
     { text: ' each trades downtime for effort', style: {} },
   ])
   expect(drawnWith('◆ Pick', undefined, 'light')[0]?.style).toEqual(LINEAGE_LIGHT.decision)
+})
+
+/** The keys of the path copy controls a mounted LINK_TREE draws, under a terminal and a viewport. */
+const pathControls = async ($: Engine, on: On, term: string, columns = 120) => {
+  mock.env(on, { TERM_PROGRAM: term, HOME: '/Users/me' })
+  const ui = await $.ui.mount({ ...message(fence(LINK_TREE)), viewport: { columns, rows: 40, isFullscreen: true } })
+  const buttons = (await ui.findAll({ type: 'Button' })).filter(b => String(b.props.key).startsWith('path:'))
+  return { ui, buttons }
+}
+
+test('path copy: auto draws a control after each path where paths are not links', async ($, on) => {
+  const copied: string[] = []
+  on('ui.copy', ($, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  const { ui, buttons } = await pathControls($, on, 'Apple_Terminal')
+  // Two absolute paths and the relative hooks/lib.ts.
+  expect(buttons.map(b => b.props.label)).toEqual(['⧉', '⧉', '⧉'])
+  await ui.press({ key: String(buttons[0]!.props.key) })
+  expect(copied).toEqual(['/Users/me/Coding/claude-mods/ascii-tree'])
+  await ui.unmount()
+})
+
+test('path copy: auto draws none where paths are links', async ($, on) => {
+  const { ui, buttons } = await pathControls($, on, 'WezTerm')
+  expect(buttons).toEqual([])
+  await ui.unmount()
+})
+
+test('path copy: on draws them where paths are links too', { options: { pathCopy: 'on' } }, async ($, on) => {
+  const { ui, buttons } = await pathControls($, on, 'WezTerm')
+  expect(buttons).toHaveLength(3)
+  await ui.unmount()
+})
+
+test('path copy: off draws none', { options: { pathCopy: 'off' } }, async ($, on) => {
+  const { ui, buttons } = await pathControls($, on, 'Apple_Terminal')
+  expect(buttons).toEqual([])
+  await ui.unmount()
+})
+
+test('path copy: a path a wrap split gets one control, after its last piece, copying it whole', async ($, on) => {
+  const copied: string[] = []
+  on('ui.copy', ($, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  const { ui, buttons } = await pathControls($, on, 'Apple_Terminal', 34)
+  expect(buttons).toHaveLength(3)
+  await ui.press({ key: String(buttons[0]!.props.key) })
+  expect(copied).toEqual(['/Users/me/Coding/claude-mods/ascii-tree'])
+  await ui.unmount()
+})
+
+test('path copy: a quoted path with a space that wraps at the space still gets its control', async ($, on) => {
+  const copied: string[] = []
+  on('ui.copy', ($, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  mock.env(on, { TERM_PROGRAM: 'Apple_Terminal', HOME: '/Users/me' })
+  const tree = '● T\n┗━━ Spaces\n     └── A path with spaces: `~/Library/Application Support`'
+  const ui = await $.ui.mount({ ...message(fence(tree)), viewport: { columns: 50, rows: 40, isFullscreen: true } })
+  const buttons = (await ui.findAll({ type: 'Button' })).filter(b => String(b.props.key).startsWith('path:'))
+  expect(buttons).toHaveLength(1)
+  await ui.press({ key: String(buttons[0]!.props.key) })
+  expect(copied).toEqual(['~/Library/Application Support'])
+  await ui.unmount()
 })

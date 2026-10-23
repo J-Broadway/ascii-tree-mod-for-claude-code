@@ -10,7 +10,13 @@ import { defaultRules, type Rule, type TokenKind } from './rules'
  * the whole token, the one kind whose underline means a link (dropped where
  * it can't be one): a piece of a path a wrap split still links to all of it.
  */
-export type Run = { text: string; style: Style; path?: string }
+export type Run = {
+  text: string
+  style: Style
+  path?: string
+  /** On a path piece a wrap cut off before the path's end: the rest is on a later row. */
+  cut?: true
+}
 
 export type { TokenKind } from './rules'
 
@@ -210,7 +216,8 @@ const clip = (pieces: readonly Piece[], from: number, to: number): Piece[] => {
     at += piece.raw.length
     if (at <= from || start >= to) continue
     const text = piece.text.slice(Math.max(0, from - start - piece.pad), Math.max(0, to - start - piece.pad))
-    if (text !== '') out.push({ ...piece, text })
+    // A path that runs past this row: this piece is not where it ends.
+    if (text !== '') out.push(piece.path !== undefined && at > to ? { ...piece, text, cut: true } : { ...piece, text })
   }
   return out
 }

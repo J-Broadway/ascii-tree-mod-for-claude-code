@@ -4,5 +4,18 @@
   "description": "Styles ASCII trees (heavy ┣━━/┗━━ and light ├──/└── in a ``` block) in Claude's replies on the terminal in a \"lineage\" palette: every guide in the color of the parent that owns it (brown root, then warm tan → clay → rosewood → stone by depth), every connector one color, green reserved for leaf keys, paths, commands, numbers, quotes and key: value leaves highlighted, children aligned, and wrapping that keeps each row under its own branch with guides unbroken. Explicit line breaks inside a node (a line of only │/┃ guides then text) draw as that node's own continuation lines, aligned at its label and styled like it. On a light theme it draws in a darker light palette that clears 4.5:1 contrast. Markers draw on subtle backgrounds: ⚠ critical information in amber, ◆ a decision for the user in purple, and the (recommended) option in green; code blocks can sit inside a tree under their step, with a copy button in fullscreen. Colors, highlight rules (per theme) and your own markers, with when Claude should use them, are customisable, and prose preferences for how trees are written can be added, from files in ~/.claude/ascii-tree/ that updates never overwrite (see CONFIG.md). Absolute and ~/ paths are clickable file:// links (a directory opens in the file manager), including paths with spaces written in quotes or backticks or with escaped spaces, except in Cursor/VS Code terminals, which link paths themselves.",
   "author": {
     "name": "jbroadway"
+  },
+  "userConfig": {
+    "pathCopy": {
+      "type": "string",
+      "title": "Path copy buttons",
+      "description": "A copy button after each path in a tree (fullscreen only, where clicks reach it). auto shows them only where paths aren't clickable links, such as macOS Terminal; on shows them everywhere; off never.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "on",
+        "off"
+      ]
+    }
   }
 }

@@ -58,6 +58,8 @@ Your settings live in `~/.claude/ascii-tree/`, outside the plugin, so updating t
 - `config.json` sets colors per theme and adds, restyles or turns off highlight rules (for example, paths in purple, `prod` in red, no hex swatches).
 - `preferences.md` is free-form prose added to the `/tree` and `/ascii-tree` prompt, such as "keep it to three levels".
 
+In `/config`, **Path copy buttons** puts a copy button after each path in fullscreen. `auto` (the default) shows them only where paths aren't clickable links, such as macOS Terminal; `on` shows them everywhere and `off` hides them.
+
 ### Highlight markers
 
 A node that starts with a marker gets its opening statement (up to the first colon or full stop) highlighted, across every row it wraps onto. Three are built in, each on a subtle background, and Claude is told when to use each:

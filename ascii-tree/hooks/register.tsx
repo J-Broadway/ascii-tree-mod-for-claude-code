@@ -14,7 +14,10 @@ import {
   type UserConfig,
 } from './config'
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // `pathCopy` (a /config row): a copy control after each path. `auto` draws
+  // them only where a path can't be clicked; `on` everywhere; `off` never.
+  const pathCopy = options.pathCopy === 'on' || options.pathCopy === 'off' ? options.pathCopy : 'auto'
   // Copy controls pressed in the last 2 seconds, by key: they read "copied".
   const copied = new Set<string>()
   // The look (palette and highlight rules) follows the theme setting and the
@@ -163,6 +166,27 @@ export const register: Register = on => {
     if (changed) $.ui.invalidate('ui.render')
     const { palette: drawn, rules } = await currentLook(io)
 
+    // Paths link to their file:// URL, so a click opens a directory in the
+    // file manager. Not in an IDE's terminal (Cursor and VS Code both set
+    // TERM_PROGRAM=vscode): it links path text itself and opens it in the
+    // editor, which a link of ours would take over. Not in macOS Terminal
+    // either: it has no OSC 8 links, so the engine would print each URL after
+    // its path. Unreadable environment: draw paths plain.
+    const env = async (read: () => Promise<string | undefined>) => {
+      try {
+        return await read()
+      } catch {
+        return undefined
+      }
+    }
+    const term = await env(() => $.env.get('TERM_PROGRAM'))
+    const selfLinking = term === 'vscode'
+    const linking = term !== undefined && !selfLinking && term !== 'Apple_Terminal'
+    // In fullscreen, where clicks reach the drawing, code blocks get a copy
+    // control, and paths too where `pathCopy` asks: each takes 2 columns.
+    const clickable = e.viewport?.isFullscreen === true
+    const pathCopies = clickable && (pathCopy === 'on' || (pathCopy === 'auto' && !linking && !selfLinking))
+
     // Lay every tree out first: any that does not parse leaves it to the engine.
     // Prose keeps its code fences apart, to draw them as blocks.
     const laid: (Row[] | Piece)[] = []
@@ -173,7 +197,7 @@ export const register: Register = on => {
       }
       let rows: Row[] | undefined
       try {
-        rows = layoutTree(part.text, room, part.code)
+        rows = layoutTree(part.text, pathCopies ? room - 2 : room, part.code)
       } catch {
         rows = undefined
       }
@@ -181,20 +205,6 @@ export const register: Register = on => {
       laid.push(rows)
     }
 
-    // Paths link to their file:// URL, so a click opens a directory in the
-    // file manager. Not in an IDE's terminal (Cursor and VS Code both set
-    // TERM_PROGRAM=vscode): it links path text itself and opens it in the
-    // editor, which a link of ours would take over.
-    // Unreadable environment: draw paths plain.
-    const env = async (read: () => Promise<string | undefined>) => {
-      try {
-        return await read()
-      } catch {
-        return undefined
-      }
-    }
-    const term = await env(() => $.env.get('TERM_PROGRAM'))
-    const linking = term !== undefined && term !== 'vscode'
     const home = linking ? await env(() => $.env.get('HOME')) : undefined
     // A relative path links when it exists under the session's directory:
     // a guess at its base never becomes a broken link.
@@ -225,35 +235,66 @@ export const register: Register = on => {
     const runs = (row: Row): Run[] => [...prefixRuns(row, drawn), ...labelRuns(row, drawn, rules)]
     // Fullscreen passes clicks to the drawing, so each code block gets a copy
     // control there; elsewhere a click is the terminal's, and /copy picks blocks.
-    const clickable = e.viewport?.isFullscreen === true
     let copies = 0
     // Right-aligned, so it reads as the block's control rather than its text;
     // a press says "copied" in place for 2 seconds (a failure, in a toast).
-    const copyButton = (text: string) => {
-      const key = `copy:${e.requestId}:${copies++}`
-      return (
-        <Box flexGrow={1} justifyContent="flex-end">
-          <Button
-            key={key}
-            label={copied.has(key) ? '✓ copied' : '⧉ copy'}
-            plain
-            dimColor
-            onPress={async press => {
-              const done = await $.ui.copy({ text, surface: press.surface })
-              if (!done.isCopied) {
-                $.ui.toast('Could not copy')
-                return
-              }
-              copied.add(key)
-              $.ui.invalidate('ui.render')
-              $.clock.after(2000, () => {
-                copied.delete(key)
-                $.ui.invalidate('ui.render')
-              })
-            }}
-          />
-        </Box>
-      )
+    const control = (key: string, text: string, labels: readonly [string, string]) => (
+      <Button
+        key={key}
+        label={copied.has(key) ? labels[1] : labels[0]}
+        plain
+        dimColor
+        onPress={async press => {
+          const done = await $.ui.copy({ text, surface: press.surface })
+          if (!done.isCopied) {
+            $.ui.toast('Could not copy')
+            return
+          }
+          copied.add(key)
+          $.ui.invalidate('ui.render')
+          $.clock.after(2000, () => {
+            copied.delete(key)
+            $.ui.invalidate('ui.render')
+          })
+        }}
+      />
+    )
+    const copyButton = (text: string) => (
+      <Box flexGrow={1} justifyContent="flex-end">
+        {control(`copy:${e.requestId}:${copies++}`, text, ['⧉ copy', '✓ copied'])}
+      </Box>
+    )
+    // A path's control goes after its last piece: a path a wrap split is
+    // copied whole, from the row where it ends.
+    let pathKeys = 0
+    const endsHere = (run: Run): boolean => run.path !== undefined && run.cut === undefined
+    const drawRun = (row: Row, run: Run) => {
+      const to = href(row, run)
+      // Underlined means clickable: a path we can't link drops its
+      // underline, unless an IDE's terminal links it itself. Any other run
+      // keeps an underline its style asks for.
+      const { underline, ...rest } = run.style
+      const style = to === undefined && run.path !== undefined && !selfLinking ? rest : run.style
+      const text = <Text {...style}>{run.text}</Text>
+      return to === undefined ? text : <Link href={to}>{text}</Link>
+    }
+    // A row's runs as one Text; with path controls, cut after each path
+    // that ends in it, the control between the pieces.
+    const drawRow = (row: Row) => {
+      const all = runs(row)
+      if (!pathCopies || row.role === 'root') return <Text wrap="truncate-end">{all.map(run => drawRun(row, run))}</Text>
+      const pieces: JSX.Element[] = []
+      let held: Run[] = []
+      for (const run of all) {
+        held.push(run)
+        if (!endsHere(run)) continue
+        pieces.push(<Text>{held.map(r => drawRun(row, r))}</Text>, <Text> </Text>)
+        pieces.push(control(`path:${e.requestId}:${pathKeys++}`, run.path!, ['⧉', '✓']))
+        held = []
+      }
+      if (pieces.length === 0) return <Text wrap="truncate-end">{all.map(run => drawRun(row, run))}</Text>
+      if (held.length > 0) pieces.push(<Text>{held.map(r => drawRun(row, r))}</Text>)
+      return <Box flexDirection="row">{pieces}</Box>
     }
     // A blank row between parts, so a command block after a tree stands apart.
     return (
@@ -278,18 +319,7 @@ export const register: Register = on => {
                 row.prefix === '' && row.label === '' ? (
                   <Text> </Text>
                 ) : (
-                  <Text wrap="truncate-end">
-                    {runs(row).map(run => {
-                      const to = href(row, run)
-                      // Underlined means clickable: a path we can't link drops
-                      // its underline. An IDE's terminal links paths itself.
-                      // Any other run keeps an underline its style asks for.
-                      const { underline, ...rest } = run.style
-                      const style = linking && to === undefined && run.path ? rest : run.style
-                      const text = <Text {...style}>{run.text}</Text>
-                      return to === undefined ? text : <Link href={to}>{text}</Link>
-                    })}
-                  </Text>
+                  drawRow(row)
                 ),
                 // Under a code block in the tree: the control, behind the block's guides.
                 ...(clickable && row.copy !== undefined
