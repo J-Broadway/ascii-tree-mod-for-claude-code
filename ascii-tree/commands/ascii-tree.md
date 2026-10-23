@@ -3,7 +3,7 @@ description: Return as ergonomic ascii tree
 ---
 
 # Return as ergonomic ascii tree
-Respond ONLY with your answer as an ergonomic ASCII tree and no other text.
+Respond ONLY with your answer as an ergonomic ASCII tree and no other text, except the command blocks described below.
 
 Content:
 - Be concise, as short as possible, without omitting critical details.
@@ -16,6 +16,7 @@ Formatting (the `ascii-tree` mod styles and wraps the tree, so keep it plain):
 - Put the whole tree in one ``` code block with no language tag. Never write three backticks inside the tree, not even mid-line; say "code block" instead. No markdown inside it (no `**`), except backticks: wrap code, commands and paths in them and the mod colors them and drops the backticks.
 - Write paths to real files and folders in full, from `~/` or `/` (`~/Coding/app/src/main.ts`, not `src/main.ts`), so they are clickable; a relative path links only when it exists under the working directory. Leave generic paths in a general explanation (`.git/config`) as written.
 - A path with spaces goes in backticks or quotes (`~/Library/Application Support/x`), so it is colored and linked whole.
+- Commands for the user to run go after the tree, not in it, so they copy without the tree's lines: one code block with a language tag (`sh`, `bash`, ...) right after the tree's code block, all the commands in run order, nothing else after it. In the tree, say what they do and refer to them ("run the commands below"). Short commands named in passing, not meant to be copied (`git status`), stay inline in backticks.
 - Root: `● Title` on its own line.
 - Top-level spine uses heavy lines: `┃` for the vertical, `┣━━` for each top-level branch, `┗━━` for the last one. Leave a `┃` spacer line between top-level branches.
 - Deeper levels use light lines: `│`, `├──`, `└──`.

@@ -57,6 +57,8 @@ claude plugin install ascii-tree@claude-mods
 
 Run `/ascii-tree` (or `/tree`), with or without a question. Claude keeps answering as a tree until you tell it to stop.
 
+Commands for you to run come in a code block after the tree, so `/copy` grabs just the commands, without the tree's lines.
+
 ## Customize
 
 Your settings live in `~/.claude/ascii-tree/`, outside the plugin, so updating the mod never overwrites them. Both files are optional, and edits apply to the next tree drawn without a restart.

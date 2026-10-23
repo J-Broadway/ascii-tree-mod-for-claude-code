@@ -220,8 +220,9 @@ export const register: Register = on => {
 
     const { Box, Text, Link, Markdown } = $.ui.resolve(e)
     const runs = (row: Row): Run[] => [...prefixRuns(row, drawn), ...labelRuns(row, drawn, rules)]
+    // A blank row between parts, so a command block after a tree stands apart.
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" gap={1}>
         {laid.map(part =>
           typeof part === 'string' ? (
             <Markdown text={part} />
