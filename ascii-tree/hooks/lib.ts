@@ -315,6 +315,25 @@ export type Row = {
   first: boolean
   /** The node line's whole label before wrapping, so a token split across rows can be told from a whole one. */
   whole: string
+  /**
+   * Where this row's label starts in `whole`, so a token can be found on the
+   * whole label and drawn cut at the row breaks. Undefined when the label
+   * can't be placed in it.
+   */
+  offset: number | undefined
+  /** On a node's hard-break continuation lines: their text is never a `key:`. */
+  continuation: boolean
+}
+
+/** Where each row's label starts in `whole`: the rows are its consecutive slices, less the spaces a wrap broke at. */
+const offsets = (labels: readonly string[], whole: string): (number | undefined)[] => {
+  let cursor = 0
+  return labels.map(label => {
+    const at = whole.indexOf(label, cursor)
+    if (at < 0) return undefined
+    cursor = at + label.length
+    return at
+  })
 }
 
 /**
@@ -338,18 +357,24 @@ export const layoutTree = (block: string, cols: number): Row[] | undefined => {
       const nodeLineage = lineages[node]
       const stem = stemOf(nodeLine.match(GUIDE)?.[0] ?? '')
       const text = line.slice((line.match(GUIDE)?.[0] ?? '').length).replace(/\s+$/, '')
-      return wrapTreeLine(stem + text, cols).map(row => {
+      const wrapped = wrapTreeLine(stem + text, cols).map(row => {
         const prefix = row.match(GUIDE)?.[0] ?? ''
+        return { prefix, label: row.slice(prefix.length) }
+      })
+      const at = offsets(wrapped.map(r => r.label), text)
+      return wrapped.map(({ prefix, label }, n) => {
         return {
           role: roles[node] ?? 'leaf',
           depth: nodeLineage?.depth ?? -1,
           owners: nodeLineage?.owners ?? [],
           hasChildren: nodeLineage?.hasChildren ?? false,
           prefix,
-          label: row.slice(prefix.length),
+          label,
           connector: -1,
           first: false,
           whole: text,
+          offset: at[n],
+          continuation: true,
         }
       })
     }
@@ -360,35 +385,41 @@ export const layoutTree = (block: string, cols: number): Row[] | undefined => {
       owners: [],
       hasChildren: false,
     }
-    const base = { role, depth, owners, hasChildren }
+    const base = { role, depth, owners, hasChildren, continuation: false }
     const trimmed = line.replace(/\s+$/, '')
     const whole = trimmed.slice((trimmed.match(GUIDE)?.[0] ?? '').length)
     if (role === 'rule') {
       // Never wrapped: a divider too wide for the screen is cut at its edge.
       const prefix = trimmed.match(/^[\s│┃]*/)?.[0] ?? ''
-      return [{ ...base, prefix, label: trimmed.slice(prefix.length), connector: -1, first: true, whole }]
+      return [{ ...base, prefix, label: trimmed.slice(prefix.length), connector: -1, first: true, whole, offset: 0 }]
     }
-    if (role === 'guide') return [{ ...base, prefix: trimmed, label: '', connector: -1, first: true, whole }]
+    if (role === 'guide') return [{ ...base, prefix: trimmed, label: '', connector: -1, first: true, whole, offset: 0 }]
     if (role === 'root') {
-      return wrapTreeLine(trimmed, cols).map((label, n) => ({
+      const labels = wrapTreeLine(trimmed, cols)
+      const at = offsets(labels, whole)
+      return labels.map((label, n) => ({
         ...base,
         prefix: '',
         label,
         connector: -1,
         first: n === 0,
         whole,
+        offset: at[n],
       }))
     }
-    return wrapTreeLine(trimmed, cols).map((row, n) => {
+    const wrapped = wrapTreeLine(trimmed, cols).map(row => {
       const prefix = row.match(GUIDE)?.[0] ?? ''
-      return {
-        ...base,
-        prefix,
-        label: row.slice(prefix.length),
-        connector: n === 0 ? col : -1,
-        first: n === 0,
-        whole,
-      }
+      return { prefix, label: row.slice(prefix.length) }
     })
+    const at = offsets(wrapped.map(r => r.label), whole)
+    return wrapped.map(({ prefix, label }, n) => ({
+      ...base,
+      prefix,
+      label,
+      connector: n === 0 ? col : -1,
+      first: n === 0,
+      whole,
+      offset: at[n],
+    }))
   })
 }

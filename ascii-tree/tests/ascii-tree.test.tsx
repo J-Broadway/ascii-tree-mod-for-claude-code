@@ -1,7 +1,9 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { labelRuns, leafKey, pathHref, prefixRuns, resolvePath, tokenize } from '../hooks/highlight'
+import { DEFAULT_RULES, labelRuns, leadEnd, leafKey, pathHref, prefixRuns, resolvePath, tokenize } from '../hooks/highlight'
+import { applyPalette, EMPTY_CONFIG, markerGuide, parseConfig, resolveLook, userPath, withPreferences } from '../hooks/config'
+import { compileRules } from '../hooks/rules'
 import { classify, continuations, isRule, isTree, layoutTree, normalizeIndent, splitParts, wrapTreeLine } from '../hooks/lib'
 import { LINEAGE, LINEAGE_LIGHT, paletteFor } from '../hooks/palette'
 
@@ -248,7 +250,7 @@ test('key: value leaves color a short key', async () => {
   expect(labelRuns(row, LINEAGE)).toEqual([
     { text: 'local:', style: { color: LEAF } },
     { text: ' ', style: {} },
-    { text: '~/.claude/x', style: { color: PATH, underline: true } },
+    { text: '~/.claude/x', style: { color: PATH, underline: true }, path: true },
   ])
 })
 
@@ -413,7 +415,7 @@ test('bug B: a depth-2 branch label is bold d2 throughout, no key split', async 
   expect(labelRuns(rows[2]!, LINEAGE)).toEqual([{ text: 'Files', style: { color: TAN, weight: 'bold' } }])
   expect(labelRuns(rows[3]!, LINEAGE)).toEqual([
     { text: 'new: ', style: { color: D2, weight: 'bold' } },
-    { text: 'hooks/palette.ts', style: { color: PATH, weight: 'bold', underline: true } },
+    { text: 'hooks/palette.ts', style: { color: PATH, weight: 'bold', underline: true }, path: true },
   ])
   expect(labelRuns(rows[5]!, LINEAGE)[0]).toEqual({ text: 'new: ', style: { color: D2, weight: 'bold' } })
   // A leaf keeps its green key.
@@ -658,7 +660,7 @@ test('breaks: key: green on the first line only', async () => {
   expect(labelRuns(rows[2]!, LINEAGE)).toEqual([{ text: 'other: second line', style: {} }])
   // Tokens still highlight on continuation lines.
   const tok = rowsOf('r\n└── a\n    see ~/x.ts')
-  expect(labelRuns(tok[2]!, LINEAGE)[1]).toEqual({ text: '~/x.ts', style: { color: PATH, underline: true } })
+  expect(labelRuns(tok[2]!, LINEAGE)[1]).toEqual({ text: '~/x.ts', style: { color: PATH, underline: true }, path: true })
 })
 
 test('breaks: misaligned continuation lines normalize to the label column', async () => {
@@ -957,4 +959,374 @@ test('rules: a fence with a ═ divider is drawn by the plugin, not the engine',
   const ui = await $.ui.mount({ ...message(fence(ruled('═'))), viewport: { columns: 120, rows: 40 } })
   expect(await ui.find({ type: 'Text', text: /engine/ })).toBeUndefined()
   await ui.unmount()
+})
+
+// ---- User config: ~/.claude/ascii-tree/config.json and preferences.md ----
+
+/** The look a config's text gives a theme, and the reasons it skipped anything. */
+const lookOf = (json: string | undefined, theme: unknown = 'dark') => {
+  const skipped: string[] = []
+  return { look: resolveLook(theme, parseConfig(json, m => skipped.push(m)), m => skipped.push(m)), skipped }
+}
+
+/** The first row of a one-node tree's label runs, drawn with a config. */
+const drawnWith = (label: string, json?: string, theme: unknown = 'dark') => {
+  const { look } = lookOf(json, theme)
+  const row = rowsOf(`● Title\n┗━━ ${label}`).find(r => r.role !== 'root')!
+  return labelRuns(row, look.palette, look.rules)
+}
+
+/** Answers `$.fs` and `$.env` from a map of absolute path to text; `mtime` is the map's version. */
+const userFiles = (on: On, files: Record<string, string>, mtime: { at: number } = { at: 1 }) => {
+  // Nothing beneath the plugins answers skill.prompt in a test: the prompt as given.
+  on('skill.prompt', ($, e) => ({ text: e.text }))
+  mock.env(on, { TERM_PROGRAM: 'WezTerm', HOME: '/Users/me' })
+  on('fs.stat', ($, e) => {
+    if (!(e.path in files)) throw new Error('ENOENT')
+    return { value: { kind: 'file', size: 1, mtimeMs: mtime.at, isLink: false } } as never
+  })
+  on('fs.read', ($, e) => {
+    const text = files[e.path]
+    if (text === undefined) throw new Error('ENOENT')
+    return { value: text }
+  })
+}
+const CONFIG = '/Users/me/.claude/ascii-tree/config.json'
+const PREFS = '/Users/me/.claude/ascii-tree/preferences.md'
+
+test('config: no file, an empty file or {} leaves the built-in look as it was', async () => {
+  for (const json of [undefined, '', '  ', '{}']) {
+    const { look, skipped } = lookOf(json)
+    expect(look.palette).toBe(LINEAGE)
+    expect(look.rules.map(r => r.name)).toEqual(DEFAULT_RULES.map(r => r.name))
+    expect(skipped).toEqual([])
+  }
+  expect(lookOf(undefined, 'light').look.palette).toBe(LINEAGE_LIGHT)
+  expect(drawnWith('see ~/a.ts and 12 items')).toEqual(drawnWith('see ~/a.ts and 12 items', '{}'))
+})
+
+test('config: the built-in rules keep their documented names and order', async () => {
+  expect(DEFAULT_RULES.map(r => r.name)).toEqual([
+    'code', 'url', 'quote', 'home-path', 'abs-path', 'rel-path', 'hex', 'command', 'flag', 'date', 'version',
+    'number', 'arrow', 'attention',
+  ])
+})
+
+test('config: a palette override merges per role onto the theme it names', async () => {
+  const json = '{"palette":{"dark":{"path":{"color":"#9B59B6"},"depth":[{"color":"#112233"}]},"light":{"path":{"color":"#551A8B"}}}}'
+  const dark = lookOf(json, 'dark').look.palette
+  expect(dark.path).toEqual({ color: '#9B59B6', underline: true })
+  expect(dark.depth[0]).toEqual({ color: '#112233', weight: 'bold' })
+  expect(dark.depth[1]).toEqual(LINEAGE.depth[1])
+  expect(dark.number).toEqual(LINEAGE.number)
+  expect(lookOf(json, 'light').look.palette.path).toEqual({ color: '#551A8B', underline: true })
+  expect(lookOf(json, 'light').look.palette.number).toEqual(LINEAGE_LIGHT.number)
+  // Depth entries past the built-in list extend it from the last level.
+  const long = applyPalette(LINEAGE, { depth: [{}, {}, {}, {}, { color: '#000000' }] })
+  expect(long.depth).toHaveLength(5)
+  expect(long.depth[4]).toEqual({ ...LINEAGE.depth[3], color: '#000000' })
+  const runs = drawnWith('open ~/a.ts', json)
+  expect(runs.find(r => r.text === '~/a.ts')?.style).toEqual({ color: '#9B59B6', underline: true })
+})
+
+test('config: a built-in rule can be disabled, restyled or retargeted by name', async () => {
+  const off = lookOf('{"highlights":{"hex":false}}').look
+  expect(tokenize('#8B5A2B', off.rules)).toEqual([{ text: '#8B5A2B' }])
+  expect(tokenize('#8B5A2B')).toEqual([{ text: '#8B5A2B', kind: 'hex' }])
+  // The other rules still run.
+  expect(tokenize('v1.2', off.rules)).toEqual([{ text: 'v1.2', kind: 'number' }])
+  const styled = drawnWith('12 items', '{"highlights":{"number":{"style":{"backgroundColor":"error","weight":"bold"}}}}')
+  expect(styled[0]).toEqual({ text: '12', style: { color: NUM, backgroundColor: 'error', weight: 'bold' } })
+  const match = lookOf('{"highlights":{"flag":{"match":"--[a-z]+!"}}}').look
+  expect(tokenize('--yes! --no', match.rules)).toEqual([{ text: '--yes!', kind: 'code' }, { text: ' --no' }])
+})
+
+test('config: a new rule adds after the built-ins and loses ties to them', async () => {
+  const json = '{"highlights":{"todo":{"match":"\\\\bTODO\\\\b","style":{"color":"error","weight":"bold"}}}}'
+  const { look } = lookOf(json)
+  expect(look.rules.map(r => r.name).at(-1)).toBe('todo')
+  const runs = drawnWith('fix TODO soon', json)
+  expect(runs).toEqual([
+    { text: 'fix ', style: {} },
+    { text: 'TODO', style: { color: 'error', weight: 'bold' } },
+    { text: ' soon', style: {} },
+  ])
+  // ignoreCase, and a rule needs both match and style.
+  expect(tokenize('todo', lookOf('{"highlights":{"t":{"match":"TODO","ignoreCase":true,"style":{"dimColor":true}}}}').look.rules)).toEqual([
+    { text: 'todo', kind: 'custom' },
+  ])
+  expect(lookOf('{"highlights":{"t":{"match":"x"}}}').skipped).toHaveLength(1)
+})
+
+test('config: lead scope colors the opening statement, label scope the whole label', async () => {
+  expect(leadEnd('Prod: do not touch')).toBe(5)
+  expect(leadEnd('Backs up first. Then runs')).toBe(15)
+  expect(leadEnd('no stop here')).toBe(12)
+  expect(leadEnd('url http://x.y is fine')).toBe(22)
+  const lead = '{"highlights":{"prod":{"match":"\\\\bprod\\\\b","scope":"lead","style":{"color":"error"}}}}'
+  expect(drawnWith('prod: deploy 3 pods', lead)).toEqual([
+    { text: 'prod:', style: { color: 'error' } },
+    { text: ' deploy ', style: {} },
+    { text: '3', style: { color: NUM } },
+    { text: ' pods', style: {} },
+  ])
+  const whole = '{"highlights":{"prod":{"match":"\\\\bprod\\\\b","scope":"label","style":{"color":"error"}}}}'
+  expect(drawnWith('ship to prod', whole)).toEqual([{ text: 'ship to prod', style: { color: 'error' } }])
+  // No match, no range.
+  expect(drawnWith('ship to dev', whole)).toEqual([{ text: 'ship to dev', style: {} }])
+})
+
+test('config: attention banners the lead of a label starting with ⚠, paths excepted', async () => {
+  const banner = LINEAGE.attention
+  expect(drawnWith('⚠ Back up first: then run it')).toEqual([
+    { text: '⚠ Back up first:', style: banner },
+    { text: ' then run it', style: {} },
+  ])
+  // The banner ends at the colon as drawn, after `code` drops its backticks.
+  expect(drawnWith('⚠ Run `npm ci` first: then test').at(-1)).toEqual({ text: ' then test', style: {} })
+  // Tokens inside the banner keep their colors on its background; a path keeps
+  // its whole look (and link).
+  const runs = drawnWith('⚠ Edit ~/a.ts or 3 files. More')
+  expect(runs[0]).toEqual({ text: '⚠ Edit ', style: banner })
+  expect(runs[1]).toEqual({ text: '~/a.ts', style: LINEAGE.path, path: true })
+  expect(runs[2]).toEqual({ text: ' or ', style: banner })
+  expect(runs[3]).toEqual({ text: '3', style: { ...LINEAGE.number, ...banner } })
+  // A ⚠ elsewhere is plain text; a branch keeps its depth color on the banner.
+  expect(drawnWith('mind the ⚠ sign')).toEqual([{ text: 'mind the ⚠ sign', style: {} }])
+  const branch = labelRuns(rowsOf('● T\n┗━━ ⚠ Danger\n     └── leaf').find(r => r.hasChildren && r.role !== 'root')!, LINEAGE)
+  expect(branch).toEqual([{ text: '⚠ Danger', style: { ...LINEAGE.depth[0], ...banner } }])
+  // The user can restyle it, or turn it off.
+  expect(drawnWith('⚠ x', '{"highlights":{"attention":{"style":{"backgroundColor":"error"}}}}')[0]?.style).toEqual({
+    backgroundColor: 'error',
+  })
+  expect(drawnWith('⚠ x', '{"highlights":{"attention":false}}')).toEqual([{ text: '⚠ x', style: {} }])
+})
+
+test('wrap: a code span the wrap splits draws as code on both rows, without its backticks', async () => {
+  const rows = rowsOf('● T\n┗━━ run `claude plugin update ascii-tree@claude-mods` first', 30).filter(r => r.role !== 'root')
+  expect(rows.length).toBeGreaterThan(1)
+  const drawn = rows.map(row => labelRuns(row, LINEAGE))
+  const text = drawn.flat().map(run => run.text).join('')
+  expect(text).not.toContain('`')
+  const code = drawn.flat().filter(run => run.style.color === LINEAGE.code.color).map(run => run.text)
+  expect(code.length).toBeGreaterThan(1)
+  expect(code.join(' ').replace(/\s+/g, ' ')).toBe('claude plugin update ascii-tree@claude-mods')
+  // A leaf's `key:` is still only its line's first row.
+  const keyed = rowsOf('● T\n┗━━ Step: run `npm ci` and then `npm test` in this folder', 24).filter(r => r.role !== 'root')
+  expect(labelRuns(keyed[0]!, LINEAGE)[0]).toEqual({ text: 'Step:', style: LINEAGE.leafKey })
+  expect(keyed.slice(1).flatMap(r => labelRuns(r, LINEAGE)).some(run => run.style === LINEAGE.leafKey)).toBe(false)
+})
+
+test('config: a highlight runs across every row its statement wraps onto, and stops with it', async () => {
+  const bg = LINEAGE.attention.backgroundColor
+  // The opening statement wraps onto a second row; the rest of the label is plain.
+  const rows = rowsOf('● T\n┗━━ ⚠ Back up the whole database first: then run the migration now', 24).filter(
+    r => r.role !== 'root',
+  )
+  expect(rows.length).toBeGreaterThan(2)
+  const drawn = rows.map(row => labelRuns(row, LINEAGE))
+  const lit = drawn.flat().filter(r => r.style.backgroundColor === bg).map(r => r.text)
+  expect(lit.join(' ').replace(/\s+/g, ' ')).toBe('⚠ Back up the whole database first:')
+  expect(drawn[1]!.some(r => r.style.backgroundColor === bg)).toBe(true)
+  expect(drawn.at(-1)!.every(r => r.style.backgroundColor === undefined)).toBe(true)
+  // A `label` rule covers every row, background included.
+  const label = '{"highlights":{"all":{"match":"run","scope":"label","style":{"color":"error","backgroundColor":"warning"}}}}'
+  const { look } = lookOf(label)
+  const later = rowsOf('● T\n┗━━ aaa bbb ccc ddd eee run fff ggg', 12).filter(r => r.role !== 'root')
+  for (const row of later) {
+    expect(labelRuns(row, look.palette, look.rules)[0]?.style).toEqual({ color: 'error', backgroundColor: 'warning' })
+  }
+})
+
+test('config: a marked leaf has no key split; an unmarked one keeps it', async () => {
+  const json = '{"highlights":{"lock":{"match":"^🔒","scope":"lead","style":{"underline":true}}}}'
+  expect(drawnWith('🔒 Leaf: the rest', json)).toEqual([
+    { text: '🔒 Leaf:', style: { underline: true } },
+    { text: ' the rest', style: {} },
+  ])
+  expect(drawnWith('⚠ Leaf: the rest')[0]).toEqual({ text: '⚠ Leaf:', style: LINEAGE.attention })
+  expect(drawnWith('Leaf: the rest', json)[0]).toEqual({ text: 'Leaf:', style: LINEAGE.leafKey })
+})
+
+test('config: an invalid rule is skipped and logged; the rest still apply', async () => {
+  const json = JSON.stringify({
+    palette: { dark: { path: { color: 'purple' }, number: { color: '#00FF00' }, bogus: {} } },
+    highlights: {
+      bad: { match: '(', style: { color: 'error' } },
+      empty: { match: 'x*', style: { color: 'error' } },
+      typo: { match: 'a', style: { colour: 'red' } },
+      kind: { match: 'a', style: { color: 'error' }, scope: 'word' },
+      text: { match: 'a', style: { bold: true } },
+      notObject: 'yes',
+      flag: { match: '(' },
+      ok: { match: 'KEEP', style: { underline: true } },
+      date: false,
+    },
+  })
+  const { look, skipped } = lookOf(json)
+  expect(skipped.length).toBeGreaterThanOrEqual(8)
+  expect(look.palette.path).toEqual(LINEAGE.path)
+  expect(look.palette.number).toEqual({ color: '#00FF00' })
+  const names = look.rules.map(r => r.name)
+  expect(names).toContain('ok')
+  expect(names).toContain('flag')
+  expect(names).not.toContain('bad')
+  expect(names).not.toContain('typo')
+  expect(names).not.toContain('date')
+  expect(tokenize('--go', look.rules)).toEqual([{ text: '--go', kind: 'code' }])
+  expect(compileRules({ x: { match: '[', style: {} } })).toHaveLength(DEFAULT_RULES.length)
+})
+
+const DECISION = '"decision":{"match":"^◆","scope":"lead","style":{"backgroundColor":"#33283F","weight":"bold"}'
+
+test('config: dark and light styles apply only on their theme, merged over style', async () => {
+  const json = `{"highlights":{${DECISION},"light":{"backgroundColor":"#EDE3F7"}}}}`
+  const bg = (theme: string) => drawnWith('◆ Pick one', json, theme)[0]!.style
+  expect(bg('dark')).toMatchObject({ backgroundColor: '#33283F', weight: 'bold' })
+  expect(bg('light')).toMatchObject({ backgroundColor: '#EDE3F7', weight: 'bold' })
+  const dark = `{"highlights":{${DECISION},"dark":{"backgroundColor":"#111111"}}}}`
+  expect(drawnWith('◆ Pick one', dark, 'dark')[0]!.style).toMatchObject({ backgroundColor: '#111111' })
+  expect(drawnWith('◆ Pick one', dark, 'light')[0]!.style).toMatchObject({ backgroundColor: '#33283F' })
+  // No overrides: the same on both themes.
+  expect(drawnWith('◆ Pick one', `{"highlights":{${DECISION}}}}`, 'light')).toEqual(
+    drawnWith('◆ Pick one', `{"highlights":{${DECISION}}}}`, 'dark'),
+  )
+})
+
+test('config: a light style merges over a built-in rule, and a bad one skips the rule', async () => {
+  const json = '{"highlights":{"attention":{"light":{"backgroundColor":"#FFEEAA"}}}}'
+  expect(drawnWith('⚠ Careful', json, 'light')[0]!.style.backgroundColor).toBe('#FFEEAA')
+  expect(drawnWith('⚠ Careful', json, 'dark')).toEqual(drawnWith('⚠ Careful'))
+  const bad = lookOf('{"highlights":{"x":{"match":"^x","style":{},"light":{"color":"nope"}}}}', 'light')
+  expect(bad.look.rules.map(r => r.name)).not.toContain('x')
+  expect(bad.skipped).toHaveLength(1)
+  // A new rule still needs `style`.
+  expect(lookOf('{"highlights":{"x":{"match":"^x","light":{}}}}').look.rules.map(r => r.name)).not.toContain('x')
+})
+
+test('config: malformed JSON falls back to the defaults', async () => {
+  for (const json of ['{', 'nope', '[1,2]', '3', 'null']) {
+    const { look, skipped } = lookOf(json)
+    expect(look.palette).toBe(LINEAGE)
+    expect(look.rules).toHaveLength(DEFAULT_RULES.length)
+    expect(skipped).toHaveLength(1)
+  }
+  expect(parseConfig('{"extra":1}', () => {})).toEqual(EMPTY_CONFIG)
+  expect(userPath('/Users/me/', 'config.json')).toBe(CONFIG)
+  expect(userPath(undefined, 'config.json')).toBeUndefined()
+})
+
+test('config: a mounted tree draws with the user config, and reloads when the file changes', async ($, on) => {
+  const files: Record<string, string> = {
+    [CONFIG]: '{"palette":{"dark":{"seed":{"color":"#112233"}}},"highlights":{"bad":{"match":"("}}}',
+  }
+  const mtime = { at: 1 }
+  userFiles(on, files, mtime)
+  const open = () => $.ui.mount({ ...message(fence(HEAVY_TREE)), viewport: { columns: 120, rows: 40 } })
+  let ui = await open()
+  expect(await colorOf(ui, '● Title')).toBe('#112233')
+  await ui.unmount()
+  // Same mtime: not re-read, even though the text differs.
+  files[CONFIG] = '{"palette":{"dark":{"seed":{"color":"#445566"}}}}'
+  ui = await open()
+  expect(await colorOf(ui, '● Title')).toBe('#112233')
+  await ui.unmount()
+  mtime.at = 2
+  ui = await open()
+  expect(await colorOf(ui, '● Title')).toBe('#445566')
+  await ui.unmount()
+  // Deleted: back to the built-in look.
+  delete files[CONFIG]
+  ui = await open()
+  expect(await colorOf(ui, '● Title')).toBe(SEED)
+  await ui.unmount()
+})
+
+test('config: a mounted attention banner and a broken config never break the render', async ($, on) => {
+  userFiles(on, { [CONFIG]: '{ not json' })
+  const tree = '● Title\n┗━━ ⚠ Careful: this drops the table\n     └── leaf'
+  const ui = await $.ui.mount({ ...message(fence(tree)), viewport: { columns: 120, rows: 40 } })
+  const run = await ui.find({ type: 'Text', text: '⚠ Careful:' })
+  expect(run).toBeDefined()
+  await ui.unmount()
+})
+
+test('config: a rule\'s underline survives in a terminal that links paths', async ($, on) => {
+  userFiles(on, { [CONFIG]: '{"highlights":{"lock":{"match":"^🔒","scope":"lead","style":{"underline":true}}}}' })
+  const tree = '● Title\n┗━━ 🔒 Rotate the key: then redeploy'
+  const ui = await $.ui.mount({ ...message(fence(tree)), viewport: { columns: 120, rows: 40 } })
+  const row = (await ui.find({ type: 'Text', text: /Rotate/ })) as { children: { props: Record<string, unknown>; children: unknown[] }[] }
+  const lock = row.children.find(run => run.children[0] === '🔒 Rotate the key:')
+  expect(lock?.props.underline).toBe(true)
+  await ui.unmount()
+})
+
+test('config: attention draws as a subtle banner in a mounted tree', async ($, on) => {
+  mock.env(on, { HOME: '/Users/me' })
+  const tree = '● Title\n┗━━ ⚠ Careful: this drops the table\n     └── leaf'
+  const ui = await $.ui.mount({ ...message(fence(tree)), viewport: { columns: 120, rows: 40 } })
+  const row = (await ui.find({ type: 'Text', text: /Careful/ })) as { children: { props: Record<string, unknown>; children: unknown[] }[] }
+  const banner = row.children.find(run => run.children[0] === '⚠ Careful:')
+  expect(banner?.props).toMatchObject(LINEAGE.attention)
+  // The text keeps its own color: a branch's depth color, here.
+  expect(banner?.props.color).toBe(LINEAGE.depth[0]?.color)
+  await ui.unmount()
+})
+
+/** The prompt as the hook returns it with no user files: the built-in markers listed. */
+const BASE = 'BASE PROMPT\n\n## Highlight markers\nThe mod highlights these; use each only where it fits:\n' +
+  '- Start a node with `⚠` only for something the user must act on or could be harmed by; at most 1–2 per tree.\n'
+
+test('preferences: appended to the tree commands\' prompt under a heading, bare or namespaced', async ($, on) => {
+  userFiles(on, { [PREFS]: '  Prefer at most 3 levels.\nAlways name the owner.  \n' })
+  for (const skill of ['tree', 'ascii-tree', 'ascii-tree:tree', 'ascii-tree:ascii-tree']) {
+    const { text } = await $.skill.prompt({ skill, text: 'BASE PROMPT' })
+    expect(text).toBe(
+      BASE + '\n## User preferences (these override the defaults above)\nPrefer at most 3 levels.\nAlways name the owner.\n',
+    )
+  }
+  // Other skills are left alone.
+  expect((await $.skill.prompt({ skill: 'commit', text: 'BASE PROMPT' })).text).toBe('BASE PROMPT')
+})
+
+test('preferences: a missing, empty or unreadable file adds nothing', async ($, on) => {
+  userFiles(on, { [PREFS]: ' \n ' })
+  expect((await $.skill.prompt({ skill: 'ascii-tree:tree', text: 'BASE PROMPT' })).text).toBe(BASE)
+  expect(withPreferences('P', undefined)).toBe('P')
+  expect(withPreferences('P\n\n', 'x')).toBe('P\n\n## User preferences (these override the defaults above)\nx\n')
+})
+
+test('preferences: absent file, absent HOME', async ($, on) => {
+  userFiles(on, {})
+  expect((await $.skill.prompt({ skill: 'tree', text: 'BASE PROMPT' })).text).toBe(BASE)
+})
+
+test('markers: a rule\'s `when` puts it in the prompt; disabling a rule takes it out', async ($, on) => {
+  userFiles(on, {
+    [CONFIG]: JSON.stringify({
+      highlights: {
+        lock: { match: '^🔒', scope: 'lead', when: 'a security-sensitive step', style: { backgroundColor: '#2A2A3A' } },
+        todo: { match: '\\bTODO\\b', ignoreCase: true, when: 'work left undone', style: { color: 'error' } },
+        quiet: { match: '^✓', style: { dimColor: true } },
+      },
+    }),
+  })
+  const { text } = await $.skill.prompt({ skill: 'tree', text: 'BASE PROMPT' })
+  expect(text).toBe(
+    BASE +
+      '- Start a node with `🔒` only for a security-sensitive step.\n' +
+      '- Text matching /\\bTODO\\b/i is highlighted (todo): write it for work left undone.\n',
+  )
+  // A rule turned off is not offered to the model; a built-in's `when` can be reworded.
+  expect(markerGuide(lookOf('{"highlights":{"attention":false}}').look.rules)).toBeUndefined()
+  expect(markerGuide(lookOf('{"highlights":{"attention":{"when":"prod changes"}}}').look.rules)).toBe(
+    '## Highlight markers\nThe mod highlights these; use each only where it fits:\n- Start a node with `⚠` only for prod changes.',
+  )
+  // A `when` that is not a short string skips the rule.
+  expect(lookOf('{"highlights":{"x":{"match":"^x","when":"","style":{"dimColor":true}}}}').skipped).toHaveLength(1)
+})
+
+test('markers: a broken config.json still lists the built-in markers', async ($, on) => {
+  userFiles(on, { [CONFIG]: '{ not json' })
+  expect((await $.skill.prompt({ skill: 'tree', text: 'BASE PROMPT' })).text).toBe(BASE)
 })

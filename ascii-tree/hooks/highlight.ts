@@ -2,59 +2,27 @@
 
 import type { Row } from './lib'
 import { depthStyle, guideStyle, type Palette, type Style } from './palette'
+import { defaultRules, type Rule, type TokenKind } from './rules'
 
 /** A run of text and its style. */
-export type Run = { text: string; style: Style }
+/**
+ * A run of text and its style; `path` marks a path or URL token, the one kind
+ * whose underline means a link (and is dropped where it can't be one).
+ */
+export type Run = { text: string; style: Style; path?: true }
 
-/** The token classes the label highlighter finds. */
-export type TokenKind = 'code' | 'path' | 'number' | 'quote' | 'arrow' | 'hex'
+export type { TokenKind } from './rules'
 
 /** Trailing punctuation that ends a sentence rather than a path or URL. */
 const TRAIL = /[.,;:!?)\]]+$/
 
-/**
- * The token patterns, in priority order: at the same position the earlier
- * one wins. Each must be global (`g`) so it can be resumed at any position.
- */
-const TOKENS: readonly { kind: TokenKind; re: RegExp; trim?: boolean; strip?: boolean }[] = [
-  // `code`, shown without its backticks.
-  { kind: 'code', re: /`([^`\n]+)`/g, strip: true },
-  { kind: 'path', re: /\b(?:https?|ftp|file):\/\/[^\s<>"'`]+/g, trim: true },
-  { kind: 'quote', re: /"[^"\n]+"|“[^”\n]+”/g },
-  // ~/x, ./x, ../x; a space escaped as `\ ` stays in the path.
-  { kind: 'path', re: /(?<![\w/])(?:~|\.{1,2})\/(?:\\ |[^\s"'`<>])*/g, trim: true },
-  // /abs/with/slashes: two segments at least, not after a word ("and/or").
-  { kind: 'path', re: /(?<![\w.~/-])\/(?:[\w.@+-]|\\ )+(?:\/(?:[\w.@+-]|\\ )*)+/g, trim: true },
-  // foo/bar.ext or foo/bar/ (a relative path with an extension or a trailing slash).
-  {
-    kind: 'path',
-    re: /(?<![\w./-])[\w@+-][\w.@+-]*(?:\/[\w.@+-]+)*(?:\/[\w@+-][\w.@+-]*\.[A-Za-z0-9]{1,8}\b|\/[\w@+-][\w.@+-]*\/)/g,
-    trim: true,
-  },
-  // #8B5A2B, #abc, #RRGGBBAA: 3, 6 or 8 hex digits after `#`, not inside a
-  // word. To leave issue refs like #123 alone, a token needs at least one
-  // a-f letter, or exactly 6 digits (#123456 reads as a color).
-  {
-    kind: 'hex',
-    re: /(?<![\w#&])#(?:(?=[0-9a-fA-F]*[a-fA-F])(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})|[0-9]{6})(?![\w])/g,
-  },
-  // /slash-command (also /plugin:command), not a path.
-  { kind: 'code', re: /(?<![\w/.~-])\/[a-z][\w-]*(?::[\w-]+)?(?![\w/.])/g },
-  // --flag, --flag=value
-  { kind: 'code', re: /(?<![\w-])--[a-zA-Z][\w-]*(?:=[^\s,;]+)?/g },
-  // 2026-10-20
-  { kind: 'number', re: /(?<![\w.-])\d{4}-\d{2}-\d{2}(?![\w-])/g },
-  // v0.2.0, V1.2, 1.2.3-beta.1: the `v` is part of the token.
-  { kind: 'number', re: /(?<![\w.])[vV]?\d+(?:\.\d+){1,3}(?:-[A-Za-z0-9.]+)?(?![\w])/g },
-  // 1600s, 4 MiB, 12%, 3.5, 1,024, 200ms
-  {
-    kind: 'number',
-    re: /(?<![\w.#])\d[\d,]*(?:\.\d+)?(?:s\b|%|\s?(?:[KMGTP]i?B|[kKMGT]B|B|bytes|ms|µs|ns|px|sec|min|h)\b)?(?![\w])/g,
-  },
-  { kind: 'arrow', re: /[→←↔⇒⇐⇔⟶⟵➜]/g },
-]
+/** The built-in rules, compiled once: what a tree is drawn with when the user has no config. */
+export const DEFAULT_RULES: readonly Rule[] = defaultRules()
 
 export type Token = { text: string; kind?: TokenKind }
+
+/** A token and the rule that found it, for styling; `raw` is the text as written, backticks and quotes kept. */
+type Found = Token & { rule?: Rule; raw: string }
 
 /**
  * A whole absolute, ~/, ./ or ../ path, or a URL, spaces allowed: what a
@@ -68,15 +36,21 @@ const inner = (span: string): string => span.slice(1, -1)
 
 /**
  * Splits label text into plain runs and highlighted tokens, without markup:
- * the earliest match wins, ties go to the earlier pattern.
+ * the earliest match wins, ties go to the earlier rule. Only `token`-scope
+ * rules find tokens; `lead` and `label` rules color a range (see `labelRuns`).
  */
-export const tokenize = (text: string): Token[] => {
-  const out: Token[] = []
+export const tokenize = (text: string, rules: readonly Rule[] = DEFAULT_RULES): Token[] =>
+  scan(text, rules).map(({ text, kind }) => (kind === undefined ? { text } : { text, kind }))
+
+const scan = (text: string, rules: readonly Rule[]): Found[] => {
+  const out: Found[] = []
   let pos = 0
   let plain = ''
   while (pos < text.length) {
-    let best: { at: number; text: string; kind: TokenKind; shown: string } | undefined
-    for (const { kind, re, trim, strip } of TOKENS) {
+    let best: { at: number; text: string; kind: TokenKind; shown: string; rule: Rule } | undefined
+    for (const rule of rules) {
+      const { kind, re, trim, strip } = rule
+      if (rule.scope !== 'token') continue
       re.lastIndex = pos
       const m = re.exec(text)
       if (m === null) continue
@@ -84,7 +58,7 @@ export const tokenize = (text: string): Token[] => {
       if (trim) matched = matched.replace(TRAIL, '')
       if (matched.length === 0) continue
       if (best === undefined || m.index < best.at) {
-        best = { at: m.index, text: matched, kind, shown: strip ? (m[1] ?? matched) : matched }
+        best = { at: m.index, text: matched, kind, shown: strip ? (m[1] ?? matched) : matched, rule }
         // "~/My Files/x" or `~/My Files/x`: a path, drawn without its quotes.
         if ((kind === 'code' || kind === 'quote') && WHOLE_PATH.test(inner(matched))) {
           best = { ...best, kind: 'path', shown: inner(matched) }
@@ -93,13 +67,13 @@ export const tokenize = (text: string): Token[] => {
     }
     if (best === undefined) break
     plain += text.slice(pos, best.at)
-    if (plain !== '') out.push({ text: plain })
+    if (plain !== '') out.push({ text: plain, raw: plain })
     plain = ''
-    out.push({ text: best.shown, kind: best.kind })
+    out.push({ text: best.shown, kind: best.kind, rule: best.rule, raw: best.text })
     pos = best.at + best.text.length
   }
   plain += text.slice(pos)
-  if (plain !== '') out.push({ text: plain })
+  if (plain !== '') out.push({ text: plain, raw: plain })
   return out
 }
 
@@ -120,7 +94,7 @@ export const leafKey = (text: string): string | undefined => {
 const merge = (runs: Run[]): Run[] =>
   runs.reduce<Run[]>((out, run) => {
     const last = out[out.length - 1]
-    if (last !== undefined && JSON.stringify(last.style) === JSON.stringify(run.style)) {
+    if (last !== undefined && last.path === run.path && JSON.stringify(last.style) === JSON.stringify(run.style)) {
       last.text += run.text
     } else if (run.text !== '') {
       out.push({ ...run })
@@ -196,36 +170,134 @@ export const hexColor = (token: string): string => {
 }
 
 /**
- * Label text with its tokens highlighted on top of a base style; a hex token
- * is drawn in its own color. Asterisks are plain text, drawn as written.
+ * A run of label text, what it was written as (`raw`) and how many of the
+ * raw characters are a delimiter before the text (`pad`: `code`'s backtick,
+ * a quoted path's quote). A range style leaves a `path` run alone, so it
+ * stays a link.
  */
-const tokenRuns = (text: string, base: Style, palette: Palette): Run[] =>
-  tokenize(text).map(t => ({
-    text: t.text,
-    style:
-      t.kind === undefined
-        ? base
-        : t.kind === 'hex'
-          ? { ...base, color: hexColor(t.text) }
-          : { ...base, ...palette[t.kind] },
-  }))
+type Piece = Run & { raw: string; pad: number }
+
+/**
+ * Label text with its tokens highlighted on top of a base style: the kind's
+ * palette role, then the rule's own style on top; a hex token is drawn in its
+ * own color. Asterisks are plain text, drawn as written.
+ */
+const tokenRuns = (text: string, base: Style, palette: Palette, rules: readonly Rule[]): Piece[] =>
+  scan(text, rules).map(t => {
+    const pad = Math.floor((t.raw.length - t.text.length) / 2)
+    if (t.kind === undefined || t.rule === undefined) return { text: t.text, raw: t.raw, pad, style: base }
+    const own = t.kind === 'hex' ? { color: hexColor(t.text) } : roleStyle(palette, t.kind)
+    const style = { ...base, ...own, ...t.rule.style }
+    return t.kind === 'path' ? { text: t.text, raw: t.raw, pad, style, path: true } : { text: t.text, raw: t.raw, pad, style }
+  })
+
+/** The palette role a rule's kind draws in; `hex` and `custom` have none. */
+const roleStyle = (palette: Palette, kind: TokenKind): Style =>
+  kind === 'hex' || kind === 'custom' ? {} : palette[kind]
+
+/**
+ * The pieces a row shows: those of its node's whole label (written text
+ * `from` to `to`), a token the wrap split drawn in its own style on each
+ * side, its delimiters (`code`'s backticks, a quoted path's quotes) dropped
+ * wherever they fall.
+ */
+const clip = (pieces: readonly Piece[], from: number, to: number): Piece[] => {
+  const out: Piece[] = []
+  let at = 0
+  for (const piece of pieces) {
+    const start = at
+    at += piece.raw.length
+    if (at <= from || start >= to) continue
+    const text = piece.text.slice(Math.max(0, from - start - piece.pad), Math.max(0, to - start - piece.pad))
+    if (text !== '') out.push({ ...piece, text })
+  }
+  return out
+}
+
+/** A piece cut in two `cut` characters into its text, each half keeping its share of the written text. */
+const split = (piece: Piece, cut: number): [Piece, Piece] => [
+  { ...piece, text: piece.text.slice(0, cut), raw: piece.raw.slice(0, piece.pad + cut) },
+  { ...piece, text: piece.text.slice(cut), raw: piece.raw.slice(piece.pad + cut), pad: 0 },
+]
+
+/**
+ * Where a label's opening statement ends: after the first `:` followed by
+ * whitespace, else after the first sentence's `.`, `!` or `?`, else the end.
+ */
+export const leadEnd = (text: string): number => {
+  const colon = /:(?=\s)/.exec(text)
+  if (colon !== null) return colon.index + 1
+  const stop = /[.!?](?=\s|$)/.exec(text)
+  return stop === null ? text.length : stop.index + 1
+}
+
+/** The `lead` and `label` rules whose match a node's label meets. */
+const rangeRulesOf = (label: string, rules: readonly Rule[]): Rule[] =>
+  rules.filter(rule => {
+    if (rule.scope === 'token') return false
+    rule.re.lastIndex = 0
+    return rule.re.test(label)
+  })
+
+/**
+ * Lays the `lead` and `label` rules over a label's pieces: the rule's style
+ * (its kind's palette role, then its own) wins over the tokens inside its
+ * range, so the highlight reads as one, except paths, which keep their own
+ * look and stay links. Laid over the whole label before it is cut into rows,
+ * so a statement that wraps is highlighted on every row it reaches.
+ */
+const rangeRuns = (pieces: Piece[], ranged: readonly Rule[], palette: Palette): Piece[] => {
+  let out = pieces
+  for (const rule of ranged) {
+    // Measured on the label as drawn: a `code` token's backticks are gone from
+    // the pieces, so an offset into the written label would overshoot.
+    const shown = out.map(piece => piece.text).join('')
+    const end = rule.scope === 'lead' ? leadEnd(shown) : shown.length
+    const style = { ...roleStyle(palette, rule.kind), ...rule.style }
+    let at = 0
+    out = out.flatMap((piece): Piece[] => {
+      const from = at
+      at += piece.text.length
+      if (piece.path || from >= end) return [piece]
+      const cut = Math.min(piece.text.length, end - from)
+      const [inside, rest] = split(piece, cut)
+      const lit = { ...inside, style: { ...piece.style, ...style } }
+      return rest.text === '' ? [{ ...lit, raw: piece.raw }] : [lit, rest]
+    })
+  }
+  return out
+}
 
 /**
  * The label part of a row: the root in the seed style; a branch bold in its
  * depth's color; a leaf in the default text color with a short `key:` in
- * the leaf-key color. Tokens are highlighted in every label but the root's.
+ * the leaf-key color. Tokens are highlighted in every label but the root's,
+ * then the `lead` and `label` rules (such as `attention`) lay their style
+ * over their range. A label a range rule applies to has no `key:` split: its
+ * marker opens it, and the highlight is what marks its opening statement.
  */
-export const labelRuns = (row: Row, palette: Palette): Run[] => {
+export const labelRuns = (row: Row, palette: Palette, rules: readonly Rule[] = DEFAULT_RULES): Run[] => {
   if (row.label === '') return []
   if (row.role === 'rule') return [{ text: row.label, style: { dimColor: true } }]
   if (row.role === 'root') return [{ text: row.label, style: palette.seed }]
-  if (row.hasChildren) {
-    return merge(tokenRuns(row.label, depthStyle(palette, Math.max(row.depth, 1)), palette))
+  const base = row.hasChildren ? depthStyle(palette, Math.max(row.depth, 1)) : {}
+  // A node's hard-break continuation lines are its body: never a key, never ranged.
+  const pieces = (text: string, own: boolean): Piece[] => {
+    const ranged = own ? rangeRulesOf(text, rules) : []
+    const key = own && !row.hasChildren && ranged.length === 0 ? leafKey(text) : undefined
+    const tokens =
+      key === undefined
+        ? tokenRuns(text, base, palette, rules)
+        : [{ text: key, raw: key, pad: 0, style: palette.leafKey }, ...tokenRuns(text.slice(key.length), base, palette, rules)]
+    return rangeRuns(tokens, ranged, palette)
   }
-  const key = row.first ? leafKey(row.label) : undefined
-  if (key === undefined) return merge(tokenRuns(row.label, {}, palette))
-  return merge([
-    { text: key, style: palette.leafKey },
-    ...tokenRuns(row.label.slice(key.length), {}, palette),
-  ])
+  // Tokens and ranges are found on the whole label and cut at the row
+  // breaks, so a token the wrap split (a long `code` span) is still drawn as
+  // itself and a highlight runs on across rows; a row that can't be placed
+  // in its label is drawn alone, as its own first row or not.
+  const shown =
+    row.offset === undefined
+      ? pieces(row.label, row.first)
+      : clip(pieces(row.whole, !row.continuation), row.offset, row.offset + row.label.length)
+  return merge(shown.map(({ raw, pad, ...run }) => run))
 }

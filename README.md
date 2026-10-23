@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-8B5A2B.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-C8A165.svg)](https://claude.com/claude-code)
-[![Version](https://img.shields.io/badge/version-0.6.5-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.7.0-C27C5B.svg)](ascii-tree/.claude-plugin/plugin.json)
 
 <img src="docs/images/ascii-tree-styled.png" alt="Claude explaining /ascii-tree, drawn as a colored ASCII tree" width="760">
 
@@ -56,6 +56,35 @@ claude plugin install ascii-tree@claude-mods
 ## Usage
 
 Run `/ascii-tree` (or `/tree`), with or without a question. Claude keeps answering as a tree until you tell it to stop.
+
+## Customize
+
+Your settings live in `~/.claude/ascii-tree/`, outside the plugin, so updating the mod never overwrites them. Both files are optional, and edits apply to the next tree drawn without a restart.
+
+- `config.json` sets colors per theme and adds, restyles or turns off highlight rules (for example, paths in purple, `prod` in red, no hex swatches).
+- `preferences.md` is free-form prose added to the `/tree` and `/ascii-tree` prompt, such as "keep it to three levels".
+
+### Highlight markers
+
+A node that starts with a marker gets its opening statement (up to the first colon or full stop) highlighted, across every row it wraps onto. The built-in `⚠` marker puts a subtle amber background behind critical information.
+
+You can add your own markers. Give a rule a `when` and Claude is told when to use it, so one entry in `config.json` sets both how a marker looks and when Claude writes it. A rule can also set a separate style for the light and dark themes:
+
+```json
+{
+  "highlights": {
+    "decision": {
+      "match": "^◆",
+      "scope": "lead",
+      "when": "a decision the user must make",
+      "style": { "backgroundColor": "#33283F" },
+      "light": { "backgroundColor": "#EDE3F7" }
+    }
+  }
+}
+```
+
+Every rule name, palette role and style key is listed in [`ascii-tree/CONFIG.md`](ascii-tree/CONFIG.md); ask Claude to read it before it edits your config.
 
 ## Develop
 
